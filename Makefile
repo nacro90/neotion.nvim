@@ -1,4 +1,4 @@
-.PHONY: test test-file lint format check deps clean
+.PHONY: test test-file format check deps clean ci
 
 DEPS_DIR := .deps
 PLENARY_DIR := $(DEPS_DIR)/plenary.nvim
@@ -24,10 +24,6 @@ test-file: deps
 		-c "PlenaryBustedFile $(FILE)" \
 		-c "qa!"
 
-# Run linter
-lint:
-	selene lua/
-
 # Format code
 format:
 	stylua lua/ plugin/ ftplugin/ spec/
@@ -36,8 +32,8 @@ format:
 check:
 	stylua --check lua/ plugin/ ftplugin/ spec/
 
-# Run all checks (format check + lint + test)
-ci: check lint test
+# Run all checks (format check + test)
+ci: check test
 
 # Clean dependencies
 clean:

@@ -20,11 +20,15 @@ jobs:
           version: latest
           args: --check lua/ plugin/ ftplugin/
 
+      - name: Install Selene
+        run: |
+          curl -L https://github.com/Kampfkarren/selene/releases/download/0.27.1/selene-0.27.1-linux.zip -o selene.zip
+          unzip selene.zip
+          chmod +x selene
+          sudo mv selene /usr/local/bin/
+
       - name: Lint with Selene
-        uses: NTBBloowordbath/selene-action@v1.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --display-style=quiet lua/
+        run: selene --display-style=quiet lua/
 
   typecheck:
     name: Type Check

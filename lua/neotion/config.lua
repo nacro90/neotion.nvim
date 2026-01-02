@@ -7,6 +7,9 @@
 ---@brief ]]
 
 -- User-facing config type (all fields optional)
+---@alias neotion.EditingMode 'markdown'|'notion'
+---@alias neotion.ConfirmSync 'always'|'on_ambiguity'|'never'
+
 ---@class neotion.Config
 ---@field api_token? string Notion API integration token
 ---@field sync_interval? integer Debounce interval for auto-sync in milliseconds (default: 2000)
@@ -15,6 +18,8 @@
 ---@field icons? neotion.Icons Icons used in the UI
 ---@field keymaps? neotion.Keymaps Keymap configuration (set to false to disable)
 ---@field log_level? string Log level: "trace", "debug", "info", "warn", "error" (default: "info")
+---@field editing_mode? neotion.EditingMode Newline behavior: 'markdown' (double enter = new block) or 'notion' (enter = new block) (default: 'markdown')
+---@field confirm_sync? neotion.ConfirmSync When to ask for sync confirmation: 'always', 'on_ambiguity', 'never' (default: 'on_ambiguity')
 
 ---@class neotion.Icons
 ---@field synced? string Icon for synced blocks (default: "✓")
@@ -44,6 +49,8 @@ vim.g.neotion = vim.g.neotion
 ---@field icons neotion.InternalIcons
 ---@field keymaps neotion.InternalKeymaps
 ---@field log_level string
+---@field editing_mode neotion.EditingMode
+---@field confirm_sync neotion.ConfirmSync
 
 ---@class neotion.InternalIcons
 ---@field synced string
@@ -84,6 +91,8 @@ local default_config = {
     search = '<leader>nf',
   },
   log_level = 'info',
+  editing_mode = 'markdown', -- 'markdown' (double enter = new block) or 'notion' (enter = new block)
+  confirm_sync = 'on_ambiguity', -- 'always', 'on_ambiguity', 'never'
 }
 
 ---@type neotion.InternalConfig
@@ -122,10 +131,30 @@ local function validate(opts)
         if v == nil then
           return true
         end
-        local valid_levels = { trace = true, debug = true, info = true, warn = true, error = true }
-        return valid_levels[v] ~= nil
+        local valid_levels = { debug = true, info = true, warn = true, error = true, off = true }
+        return valid_levels[v:lower()] ~= nil
       end,
-      'one of: trace, debug, info, warn, error',
+      'one of: debug, info, warn, error, off',
+    },
+    editing_mode = {
+      opts.editing_mode,
+      function(v)
+        if v == nil then
+          return true
+        end
+        return v == 'markdown' or v == 'notion'
+      end,
+      'one of: markdown, notion',
+    },
+    confirm_sync = {
+      opts.confirm_sync,
+      function(v)
+        if v == nil then
+          return true
+        end
+        return v == 'always' or v == 'on_ambiguity' or v == 'never'
+      end,
+      'one of: always, on_ambiguity, never',
     },
   })
 

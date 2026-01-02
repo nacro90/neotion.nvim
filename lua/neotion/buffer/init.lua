@@ -11,6 +11,7 @@ local M = {}
 ---@field parent_id string|nil
 ---@field last_sync string|nil ISO timestamp
 ---@field status neotion.BufferStatus Current buffer state
+---@field header_line_count integer|nil Number of header lines (for block mapping)
 
 -- Store buffer metadata
 ---@type table<integer, neotion.BufferData>
@@ -45,9 +46,9 @@ function M.create(page_id)
   local bufnr = vim.api.nvim_create_buf(true, false)
 
   -- Set buffer options
-  vim.bo[bufnr].buftype = 'acwrite'
+  vim.bo[bufnr].buftype = 'acwrite' -- Write via autocmd (BufWriteCmd)
   vim.bo[bufnr].filetype = 'neotion'
-  vim.bo[bufnr].modifiable = false
+  vim.bo[bufnr].modifiable = true -- Allow editing (read-only blocks protected by autocmd)
 
   -- Set buffer name
   local normalized_id = page_id:gsub('-', '')
@@ -119,9 +120,12 @@ end
 ---@param bufnr integer
 ---@param lines string[]
 function M.set_content(bufnr, lines)
+  -- Temporarily allow modification to set content
+  local was_modifiable = vim.bo[bufnr].modifiable
   vim.api.nvim_set_option_value('modifiable', true, { buf = bufnr })
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-  vim.api.nvim_set_option_value('modifiable', false, { buf = bufnr })
+  -- Keep buffer writable for editing (read-only blocks protected by InsertEnter autocmd)
+  vim.api.nvim_set_option_value('modifiable', true, { buf = bufnr })
   vim.api.nvim_set_option_value('modified', false, { buf = bufnr })
 end
 

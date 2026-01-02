@@ -107,12 +107,7 @@ function M.open(page_id)
     local parent_type, parent_id = pages_api.get_parent(page)
 
     -- Get icon from page
-    local icon = nil
-    if page.icon then
-      if page.icon.type == 'emoji' then
-        icon = page.icon.emoji
-      end
-    end
+    local icon = pages_api.get_icon(page)
 
     buffer.update_data(bufnr, {
       page_title = title,
@@ -134,10 +129,39 @@ function M.open(page_id)
         return
       end
 
-      -- Format and display
-      local lines = format.format_page(page, blocks_result.blocks)
+      -- Use model layer for block handling
+      local model = require('neotion.model')
+      local blocks = model.deserialize_blocks(blocks_result.blocks)
+
+      -- Check editability and notify if some blocks are read-only
+      local is_fully_editable, unsupported = model.check_editability(blocks)
+      if not is_fully_editable then
+        vim.notify('[neotion] Some blocks are read-only: ' .. table.concat(unsupported, ', '), vim.log.levels.WARN)
+      end
+
+      -- Format header
+      local header_lines = format.format_header(page)
+      local header_line_count = #header_lines
+
+      -- Format blocks
+      local block_lines = model.format_blocks(blocks)
+
+      -- Combine header + blocks
+      local lines = {}
+      vim.list_extend(lines, header_lines)
+      vim.list_extend(lines, block_lines)
+
+      -- Set buffer content
       buffer.set_content(bufnr, lines)
-      buffer.update_data(bufnr, { last_sync = os.date('!%Y-%m-%dT%H:%M:%SZ') })
+
+      -- Setup model layer with extmarks
+      model.setup_buffer(bufnr, blocks, header_line_count)
+
+      -- Update buffer data
+      buffer.update_data(bufnr, {
+        last_sync = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+        header_line_count = header_line_count,
+      })
       buffer.set_status(bufnr, 'ready')
 
       -- Add to recent pages
@@ -165,20 +189,23 @@ end
 
 ---Sync current buffer with Notion
 function M.sync()
-  -- TODO: Implement sync
-  vim.notify('[neotion] sync() not yet implemented', vim.log.levels.WARN)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local sync_module = require('neotion.sync')
+  sync_module.sync(bufnr)
 end
 
 ---Force push local changes to Notion
 function M.push()
-  -- TODO: Implement push
-  vim.notify('[neotion] push() not yet implemented', vim.log.levels.WARN)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local sync_module = require('neotion.sync')
+  sync_module.push(bufnr)
 end
 
 ---Force pull remote changes from Notion
 function M.pull()
-  -- TODO: Implement pull
-  vim.notify('[neotion] pull() not yet implemented', vim.log.levels.WARN)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local sync_module = require('neotion.sync')
+  sync_module.pull(bufnr)
 end
 
 -- Navigation

@@ -22,10 +22,10 @@ jobs:
 
       - name: Install Selene
         run: |
-          curl -L https://github.com/Kampfkarren/selene/releases/download/0.27.1/selene-0.27.1-linux.zip -o selene.zip
+          curl -L https://github.com/Kampfkarren/selene/releases/download/0.29.0/selene-light-0.29.0-linux.zip -o selene.zip
           unzip selene.zip
-          chmod +x selene
-          sudo mv selene /usr/local/bin/
+          chmod +x selene-light
+          sudo mv selene-light /usr/local/bin/selene
 
       - name: Lint with Selene
         run: selene --display-style=quiet lua/

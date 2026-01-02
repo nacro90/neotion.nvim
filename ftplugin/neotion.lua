@@ -3,13 +3,14 @@
 local config = require('neotion.config').get()
 
 -- Buffer-local options
-vim.bo.filetype = 'neotion'
-vim.bo.buftype = ''
-vim.bo.modifiable = true
+-- Note: buftype and modifiable are set by buffer/init.lua when creating the buffer
+-- Don't override them here as they're intentionally set to 'acwrite' and false
 
 -- Window-local options for conceal
-vim.wo.conceallevel = config.conceal_level
-vim.wo.concealcursor = 'nc'
+-- Use vim.api with explicit window ID to avoid affecting wrong window
+local win = vim.api.nvim_get_current_win()
+vim.api.nvim_set_option_value('conceallevel', config.conceal_level, { win = win })
+vim.api.nvim_set_option_value('concealcursor', 'nc', { win = win })
 
 -- Setup buffer-local keymaps if configured
 local function setup_keymaps()

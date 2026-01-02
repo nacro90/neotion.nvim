@@ -39,6 +39,21 @@ end
 
 -- Page Operations
 
+---Validate page ID format (32 hex characters, with or without dashes)
+---@param page_id string
+---@return boolean is_valid
+---@return string|nil error_message
+local function validate_page_id(page_id)
+  local normalized = page_id:gsub('-', '')
+  if #normalized ~= 32 then
+    return false, 'Page ID must be 32 hex characters (got ' .. #normalized .. ')'
+  end
+  if not normalized:match('^%x+$') then
+    return false, 'Page ID must contain only hex characters'
+  end
+  return true, nil
+end
+
 ---Open a Notion page in a new buffer
 ---@param page_id string Notion page ID
 function M.open(page_id)
@@ -46,8 +61,80 @@ function M.open(page_id)
     page_id = { page_id, 'string' },
   })
 
-  -- TODO: Implement page opening
-  vim.notify('[neotion] open() not yet implemented', vim.log.levels.WARN)
+  -- Validate page ID format
+  local valid, err = validate_page_id(page_id)
+  if not valid then
+    vim.notify('[neotion] Invalid page ID: ' .. err, vim.log.levels.ERROR)
+    return
+  end
+
+  local buffer = require('neotion.buffer')
+  local pages_api = require('neotion.api.pages')
+  local blocks_api = require('neotion.api.blocks')
+  local format = require('neotion.buffer.format')
+
+  -- Create or get buffer
+  local bufnr, is_new = buffer.create(page_id)
+  buffer.open(bufnr)
+
+  -- Check if already loading (prevent race condition on repeated calls)
+  -- Only check for existing buffers, new buffers always need to load
+  if not is_new and buffer.is_loading(bufnr) then
+    vim.notify('[neotion] Page is already loading', vim.log.levels.INFO)
+    return
+  end
+
+  -- Set loading state (already set for new buffers, but explicit is clearer)
+  buffer.set_status(bufnr, 'loading')
+  buffer.set_content(bufnr, { 'Loading...' })
+
+  -- Fetch page info
+  pages_api.get(page_id, function(page_result)
+    -- Check if buffer is still valid (user might have closed it)
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+      return
+    end
+
+    if page_result.error then
+      buffer.set_status(bufnr, 'error')
+      buffer.set_content(bufnr, { 'Error: ' .. page_result.error })
+      vim.notify('[neotion] ' .. page_result.error, vim.log.levels.ERROR)
+      return
+    end
+
+    local page = page_result.page
+    local title = pages_api.get_title(page)
+    local parent_type, parent_id = pages_api.get_parent(page)
+
+    buffer.update_data(bufnr, {
+      page_title = title,
+      parent_type = parent_type,
+      parent_id = parent_id,
+    })
+
+    -- Fetch blocks
+    blocks_api.get_all_children(page_id, function(blocks_result)
+      -- Check if buffer is still valid
+      if not vim.api.nvim_buf_is_valid(bufnr) then
+        return
+      end
+
+      if blocks_result.error then
+        buffer.set_status(bufnr, 'error')
+        buffer.set_content(bufnr, { '# ' .. title, '', 'Error loading content: ' .. blocks_result.error })
+        vim.notify('[neotion] ' .. blocks_result.error, vim.log.levels.ERROR)
+        return
+      end
+
+      -- Format and display
+      local lines = format.format_page(page, blocks_result.blocks)
+      buffer.set_content(bufnr, lines)
+      buffer.update_data(bufnr, { last_sync = os.date('!%Y-%m-%dT%H:%M:%SZ') })
+      buffer.set_status(bufnr, 'ready')
+
+      vim.notify('[neotion] Loaded: ' .. title, vim.log.levels.INFO)
+    end)
+  end)
 end
 
 ---Create a new Notion page

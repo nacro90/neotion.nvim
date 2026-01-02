@@ -5,13 +5,29 @@ Notion integration for Neovim with **zero data loss** synchronization.
 > [!WARNING]
 > This plugin is in early development. Not ready for production use.
 
-## Features (Planned)
+## Features
 
-- Full round-trip sync preserving all Notion metadata
-- Block-level editing with concealed markers
-- Real-time sync with conflict resolution
-- Telescope/fzf-lua integration for page search
+### Implemented
+- **Zero data loss** - Unsupported block types are read-only
+- **Block-level editing** - Edit paragraphs and headings directly
+- **Rich text preservation** - Unchanged text keeps formatting (bold, italic, colors)
+- **Extmark tracking** - Accurate block-to-line mapping through edits
+- **Sync with confirmation** - Optional confirmation on ambiguous changes
+- **Telescope integration** - Page search with Telescope (falls back to vim.ui.select)
+- **Recent pages** - Quick access to recently opened pages
+
+### Supported Block Types
+| Type | Status |
+|------|--------|
+| Paragraph | Full editing |
+| Heading 1/2/3 | Full editing |
+| Toggle, Code, Quote, etc. | Read-only (preserved) |
+
+### Planned
+- Block-level markers with concealment
+- Real-time auto-sync
 - nvim-cmp completion for `/`, `@`, and `[[` triggers
+- Block creation and deletion
 
 ## Requirements
 
@@ -111,6 +127,17 @@ export NOTION_API_TOKEN=secret_xxx
 
   -- Log level: 'trace', 'debug', 'info', 'warn', 'error'
   log_level = 'info',
+
+  -- Newline behavior in edit mode:
+  -- 'markdown' - Double enter creates new block (default, natural for markdown users)
+  -- 'notion' - Single enter creates new block (like Notion app)
+  editing_mode = 'markdown',
+
+  -- When to ask for sync confirmation:
+  -- 'always' - Always confirm before syncing
+  -- 'on_ambiguity' - Only when there are unmatched changes or deletions (default)
+  -- 'never' - Never ask for confirmation
+  confirm_sync = 'on_ambiguity',
 }
 ```
 

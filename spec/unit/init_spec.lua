@@ -43,9 +43,28 @@ describe('neotion', function()
   end)
 
   describe('operations', function()
-    it('open should accept page_id', function()
+    after_each(function()
+      -- Clean up neotion buffers
+      for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+        local name = vim.api.nvim_buf_get_name(bufnr)
+        if name:match('neotion://') then
+          vim.api.nvim_buf_delete(bufnr, { force = true })
+        end
+      end
+    end)
+
+    it('open should accept valid page_id', function()
+      -- Valid 32-char hex page ID
+      local valid_id = 'a1b2c3d4e5f6789012345678abcdef00'
       -- Should not error
-      neotion.open('test-page-id')
+      neotion.open(valid_id)
+    end)
+
+    it('open should accept page_id with dashes', function()
+      -- Valid page ID with dashes (UUID format)
+      local valid_id = 'a1b2c3d4-e5f6-7890-1234-5678abcdef00'
+      -- Should not error
+      neotion.open(valid_id)
     end)
 
     it('sync should not error', function()
@@ -58,6 +77,76 @@ describe('neotion', function()
 
     it('pull should not error', function()
       neotion.pull()
+    end)
+  end)
+
+  describe('page_id validation', function()
+    local notify_messages = {}
+
+    before_each(function()
+      notify_messages = {}
+      -- Capture notify messages
+      vim.notify = function(msg, level)
+        table.insert(notify_messages, { msg = msg, level = level })
+      end
+    end)
+
+    after_each(function()
+      -- Clean up neotion buffers
+      for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+        local name = vim.api.nvim_buf_get_name(bufnr)
+        if name:match('neotion://') then
+          vim.api.nvim_buf_delete(bufnr, { force = true })
+        end
+      end
+    end)
+
+    it('should reject page_id that is too short', function()
+      neotion.open('abc123')
+
+      assert.are.equal(1, #notify_messages)
+      assert.is_truthy(notify_messages[1].msg:match('Invalid page ID'))
+      assert.is_truthy(notify_messages[1].msg:match('32 hex characters'))
+    end)
+
+    it('should reject page_id that is too long', function()
+      neotion.open('a1b2c3d4e5f6789012345678abcdef00extra')
+
+      assert.are.equal(1, #notify_messages)
+      assert.is_truthy(notify_messages[1].msg:match('Invalid page ID'))
+    end)
+
+    it('should reject page_id with non-hex characters', function()
+      neotion.open('g1b2c3d4e5f6789012345678abcdef00') -- 'g' is not hex
+
+      assert.are.equal(1, #notify_messages)
+      assert.is_truthy(notify_messages[1].msg:match('Invalid page ID'))
+      assert.is_truthy(notify_messages[1].msg:match('hex characters'))
+    end)
+
+    it('should accept valid 32-char hex page_id', function()
+      neotion.open('a1b2c3d4e5f6789012345678abcdef00')
+
+      -- No error notification (there may be other notifications)
+      local has_error = false
+      for _, msg in ipairs(notify_messages) do
+        if msg.msg:match('Invalid page ID') then
+          has_error = true
+        end
+      end
+      assert.is_false(has_error)
+    end)
+
+    it('should accept page_id with uppercase hex', function()
+      neotion.open('A1B2C3D4E5F6789012345678ABCDEF00')
+
+      local has_error = false
+      for _, msg in ipairs(notify_messages) do
+        if msg.msg:match('Invalid page ID') then
+          has_error = true
+        end
+      end
+      assert.is_false(has_error)
     end)
   end)
 end)

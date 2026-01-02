@@ -16,6 +16,20 @@ local M = {}
 ---@type table<integer, neotion.BufferData>
 local buffer_data = {}
 
+---@class neotion.RecentPage
+---@field page_id string
+---@field title string
+---@field icon? string
+---@field parent_type? string
+---@field accessed_at number Timestamp
+
+-- Store recent pages (persists across buffer deletions)
+---@type neotion.RecentPage[]
+local recent_pages = {}
+
+-- Maximum number of recent pages to track
+local MAX_RECENT = 20
+
 ---Create or get buffer for a page
 ---@param page_id string
 ---@return integer bufnr
@@ -165,6 +179,48 @@ function M.list()
     end
   end
   return buffers
+end
+
+---Add or update a page in recent history
+---@param page_id string
+---@param title string
+---@param icon? string
+---@param parent_type? string
+function M.add_recent(page_id, title, icon, parent_type)
+  local normalized_id = page_id:gsub('-', '')
+
+  -- Remove if already exists
+  for i, item in ipairs(recent_pages) do
+    if item.page_id == normalized_id then
+      table.remove(recent_pages, i)
+      break
+    end
+  end
+
+  -- Add to front
+  table.insert(recent_pages, 1, {
+    page_id = normalized_id,
+    title = title,
+    icon = icon,
+    parent_type = parent_type,
+    accessed_at = os.time(),
+  })
+
+  -- Trim to max size
+  while #recent_pages > MAX_RECENT do
+    table.remove(recent_pages)
+  end
+end
+
+---Get recent pages
+---@return neotion.RecentPage[]
+function M.get_recent()
+  return recent_pages
+end
+
+---Clear recent pages
+function M.clear_recent()
+  recent_pages = {}
 end
 
 return M

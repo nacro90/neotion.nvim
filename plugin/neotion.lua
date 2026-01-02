@@ -28,8 +28,14 @@ local subcommand_tbl = {
       require('neotion').open(page_id)
     end,
     complete = function(_)
-      -- TODO: Complete with recent pages
-      return {}
+      -- Complete with recent pages
+      local buffer = require('neotion.buffer')
+      local recent = buffer.get_recent()
+      local completions = {}
+      for _, item in ipairs(recent) do
+        table.insert(completions, item.page_id)
+      end
+      return completions
     end,
   },
   sync = {
@@ -48,8 +54,18 @@ local subcommand_tbl = {
     end,
   },
   search = {
+    impl = function(args, _)
+      -- Join all args as query string
+      local query = nil
+      if #args > 0 then
+        query = table.concat(args, ' ')
+      end
+      require('neotion').search(query)
+    end,
+  },
+  recent = {
     impl = function(_, _)
-      require('neotion').search()
+      require('neotion').recent()
     end,
   },
   status = {

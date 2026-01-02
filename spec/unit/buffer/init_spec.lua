@@ -335,4 +335,73 @@ describe('neotion.buffer', function()
       assert.are.equal('error', buffer.get_status(bufnr))
     end)
   end)
+
+  describe('recent pages tracking', function()
+    before_each(function()
+      buffer.clear_recent()
+    end)
+
+    it('should return empty array initially', function()
+      local recent = buffer.get_recent()
+      assert.are.equal(0, #recent)
+    end)
+
+    it('should add page to recent list', function()
+      buffer.add_recent('abc123', 'Test Page', '📝', 'workspace')
+
+      local recent = buffer.get_recent()
+      assert.are.equal(1, #recent)
+      assert.are.equal('abc123', recent[1].page_id)
+      assert.are.equal('Test Page', recent[1].title)
+      assert.are.equal('📝', recent[1].icon)
+      assert.are.equal('workspace', recent[1].parent_type)
+    end)
+
+    it('should add accessed_at timestamp', function()
+      buffer.add_recent('abc123', 'Test Page')
+
+      local recent = buffer.get_recent()
+      assert.is_number(recent[1].accessed_at)
+    end)
+
+    it('should move existing page to front', function()
+      buffer.add_recent('page1', 'Page 1')
+      buffer.add_recent('page2', 'Page 2')
+      buffer.add_recent('page1', 'Page 1 Updated')
+
+      local recent = buffer.get_recent()
+      assert.are.equal(2, #recent)
+      assert.are.equal('page1', recent[1].page_id)
+      assert.are.equal('Page 1 Updated', recent[1].title)
+      assert.are.equal('page2', recent[2].page_id)
+    end)
+
+    it('should normalize page_id', function()
+      buffer.add_recent('abc-123-def', 'Test')
+
+      local recent = buffer.get_recent()
+      assert.are.equal('abc123def', recent[1].page_id)
+    end)
+
+    it('should limit to MAX_RECENT pages', function()
+      -- Add 25 pages
+      for i = 1, 25 do
+        buffer.add_recent('page' .. i, 'Page ' .. i)
+      end
+
+      local recent = buffer.get_recent()
+      assert.are.equal(20, #recent) -- MAX_RECENT is 20
+      assert.are.equal('page25', recent[1].page_id) -- Most recent first
+    end)
+
+    it('should clear recent list', function()
+      buffer.add_recent('page1', 'Page 1')
+      buffer.add_recent('page2', 'Page 2')
+
+      buffer.clear_recent()
+
+      local recent = buffer.get_recent()
+      assert.are.equal(0, #recent)
+    end)
+  end)
 end)

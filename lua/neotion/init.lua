@@ -106,6 +106,14 @@ function M.open(page_id)
     local title = pages_api.get_title(page)
     local parent_type, parent_id = pages_api.get_parent(page)
 
+    -- Get icon from page
+    local icon = nil
+    if page.icon then
+      if page.icon.type == 'emoji' then
+        icon = page.icon.emoji
+      end
+    end
+
     buffer.update_data(bufnr, {
       page_title = title,
       parent_type = parent_type,
@@ -131,6 +139,9 @@ function M.open(page_id)
       buffer.set_content(bufnr, lines)
       buffer.update_data(bufnr, { last_sync = os.date('!%Y-%m-%dT%H:%M:%SZ') })
       buffer.set_status(bufnr, 'ready')
+
+      -- Add to recent pages
+      buffer.add_recent(page_id, title, icon, parent_type)
 
       vim.notify('[neotion] Loaded: ' .. title, vim.log.levels.INFO)
     end)
@@ -186,9 +197,14 @@ end
 
 ---Search Notion pages
 ---@param opts table? Search options
-function M.search(opts)
-  -- TODO: Implement search
-  vim.notify('[neotion] search() not yet implemented', vim.log.levels.WARN)
+function M.search(query)
+  local picker = require('neotion.ui.picker')
+
+  picker.search(query, function(item)
+    if item then
+      M.open(item.id)
+    end
+  end)
 end
 
 -- Block Operations
@@ -219,6 +235,36 @@ end
 function M.block_dedent()
   -- TODO: Implement block dedent
   vim.notify('[neotion] block_dedent() not yet implemented', vim.log.levels.WARN)
+end
+
+---Open recent pages picker
+function M.recent()
+  local buffer = require('neotion.buffer')
+  local picker = require('neotion.ui.picker')
+
+  local recent = buffer.get_recent()
+  if #recent == 0 then
+    vim.notify('[neotion] No recent pages', vim.log.levels.INFO)
+    return
+  end
+
+  -- Convert recent pages to picker items
+  ---@type neotion.ui.PickerItem[]
+  local items = {}
+  for _, page in ipairs(recent) do
+    table.insert(items, {
+      id = page.page_id,
+      title = page.title,
+      icon = page.icon,
+      parent_type = page.parent_type,
+    })
+  end
+
+  picker.select(items, { prompt = 'Recent Pages' }, function(item)
+    if item then
+      M.open(item.id)
+    end
+  end)
 end
 
 ---Get sync status for current buffer

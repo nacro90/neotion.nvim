@@ -149,4 +149,116 @@ function M.get_block_text(block)
   return ''
 end
 
+---@class neotion.api.UpdateResult
+---@field error string|nil Error message if update failed
+---@field block neotion.api.Block|nil Updated block data
+
+---Update a block's content
+---@param block_id string Block ID to update
+---@param block_json table Block data in Notion API format
+---@param callback fun(result: neotion.api.UpdateResult)
+function M.update(block_id, block_json, callback)
+  local auth = require('neotion.api.auth')
+  local client = require('neotion.api.client')
+
+  local token_result = auth.get_token()
+  if not token_result.token then
+    callback({ error = token_result.error })
+    return
+  end
+
+  local normalized_id = block_id:gsub('-', '')
+
+  -- Remove read-only fields that can't be updated
+  local body = vim.deepcopy(block_json)
+  body.id = nil
+  body.created_time = nil
+  body.last_edited_time = nil
+  body.created_by = nil
+  body.last_edited_by = nil
+  body.has_children = nil
+  body.archived = nil
+  body.in_trash = nil
+  body.parent = nil
+  body.object = nil
+
+  client.patch('/blocks/' .. normalized_id, token_result.token, body, function(response)
+    if response.error then
+      callback({ error = response.error })
+      return
+    end
+
+    callback({
+      error = nil,
+      block = response.body,
+    })
+  end)
+end
+
+---@class neotion.api.AppendResult
+---@field error string|nil Error message if append failed
+---@field blocks neotion.api.Block[]|nil Created blocks
+
+---Append new blocks to a parent (page or block)
+---@param parent_id string Parent page or block ID
+---@param children table[] Array of block objects to append
+---@param callback fun(result: neotion.api.AppendResult)
+function M.append(parent_id, children, callback)
+  local auth = require('neotion.api.auth')
+  local client = require('neotion.api.client')
+
+  local token_result = auth.get_token()
+  if not token_result.token then
+    callback({ error = token_result.error, blocks = {} })
+    return
+  end
+
+  local normalized_id = parent_id:gsub('-', '')
+
+  local body = {
+    children = children,
+  }
+
+  client.patch('/blocks/' .. normalized_id .. '/children', token_result.token, body, function(response)
+    if response.error then
+      callback({ error = response.error, blocks = {} })
+      return
+    end
+
+    callback({
+      error = nil,
+      blocks = response.body.results or {},
+    })
+  end)
+end
+
+---@class neotion.api.DeleteResult
+---@field error string|nil Error message if delete failed
+
+---Delete (archive) a block
+---@param block_id string Block ID to delete
+---@param callback fun(result: neotion.api.DeleteResult)
+function M.delete(block_id, callback)
+  local auth = require('neotion.api.auth')
+  local client = require('neotion.api.client')
+
+  local token_result = auth.get_token()
+  if not token_result.token then
+    callback({ error = token_result.error })
+    return
+  end
+
+  local normalized_id = block_id:gsub('-', '')
+
+  -- Notion API uses DELETE method to archive blocks
+  client.request('/blocks/' .. normalized_id, token_result.token, { method = 'DELETE' }, function(response)
+    if response.error then
+      callback({ error = response.error })
+      return
+    end
+
+    callback({ error = nil })
+  end)
+end
+
 return M

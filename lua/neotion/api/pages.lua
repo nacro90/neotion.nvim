@@ -132,4 +132,26 @@ function M.get_parent(page)
   return 'unknown', nil
 end
 
+---Extract icon from page (handles vim.NIL safely)
+---@param page neotion.api.Page
+---@return string|nil icon Emoji or nil if no icon
+function M.get_icon(page)
+  -- Check for nil, missing field, or vim.NIL (userdata from cjson)
+  if not page or not page.icon or type(page.icon) ~= 'table' then
+    return nil
+  end
+
+  if page.icon.type == 'emoji' then
+    return page.icon.emoji
+  elseif page.icon.type == 'external' and page.icon.external then
+    -- External icons are URLs, return a placeholder
+    return '🔗'
+  elseif page.icon.type == 'file' and page.icon.file then
+    -- File icons are uploaded images, return a placeholder
+    return '📄'
+  end
+
+  return nil
+end
+
 return M

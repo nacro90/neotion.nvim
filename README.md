@@ -125,7 +125,7 @@ export NOTION_API_TOKEN=secret_xxx
     search = '<leader>nf',
   },
 
-  -- Log level: 'trace', 'debug', 'info', 'warn', 'error'
+  -- Log level: 'debug', 'info', 'warn', 'error', 'off'
   log_level = 'info',
 
   -- Newline behavior in edit mode:

@@ -35,17 +35,30 @@ end
 
 ---@return boolean
 local function check_api_token()
-  local config = require('neotion.config')
-  local token = config.get().api_token
+  local auth = require('neotion.api.auth')
+  local result = auth.get_token()
 
-  if token and token ~= '' then
-    -- Mask the token for display
-    local masked = string.sub(token, 1, 10) .. string.rep('*', #token - 14) .. string.sub(token, -4)
-    vim.health.ok('Notion API token configured: ' .. masked)
+  if result.token then
+    -- Validate token format
+    local valid, format_err = auth.validate_token_format(result.token)
+    if not valid then
+      vim.health.warn('API token format may be invalid: ' .. (format_err or 'unknown'))
+    end
+
+    -- Mask the token for display (handle short tokens safely)
+    local token = result.token
+    local masked
+    if #token <= 14 then
+      masked = string.sub(token, 1, 4) .. string.rep('*', math.max(0, #token - 8)) .. string.sub(token, -4)
+    else
+      masked = string.sub(token, 1, 10) .. string.rep('*', #token - 14) .. string.sub(token, -4)
+    end
+    vim.health.ok('Notion API token configured via ' .. result.source .. ': ' .. masked)
     return true
   else
     vim.health.error('Notion API token not configured', {
       'Set api_token in setup(): require("neotion").setup({ api_token = "secret_xxx" })',
+      'Or set vim.g.neotion = { api_token = "secret_xxx" }',
       'Or set NOTION_API_TOKEN environment variable',
       'Get your token from: https://www.notion.so/my-integrations',
     })
@@ -55,11 +68,10 @@ end
 
 ---@return boolean
 local function check_curl()
-  local handle = io.popen('curl --version 2>/dev/null')
-  if handle then
-    local result = handle:read('*a')
-    handle:close()
-    if result and result ~= '' then
+  -- Use vim.fn.executable for checking, vim.fn.system for version
+  if vim.fn.executable('curl') == 1 then
+    local result = vim.fn.system('curl --version 2>/dev/null')
+    if vim.v.shell_error == 0 and result ~= '' then
       local version = result:match('curl ([%d%.]+)')
       vim.health.ok('curl is available: ' .. (version or 'unknown version'))
       return true

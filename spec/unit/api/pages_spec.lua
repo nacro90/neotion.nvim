@@ -158,6 +158,89 @@ describe('neotion.api.pages', function()
     end)
   end)
 
+  describe('get_icon', function()
+    it('should return nil for nil page', function()
+      local icon = pages.get_icon(nil)
+
+      assert.is_nil(icon)
+    end)
+
+    it('should return nil for page without icon', function()
+      local icon = pages.get_icon({})
+
+      assert.is_nil(icon)
+    end)
+
+    it('should return nil for page with nil icon', function()
+      local page = { icon = nil }
+
+      local icon = pages.get_icon(page)
+
+      assert.is_nil(icon)
+    end)
+
+    it('should return nil for vim.NIL icon (userdata from cjson)', function()
+      -- vim.NIL is how cjson represents JSON null - it's userdata, not nil
+      -- This test ensures we don't crash when icon is vim.NIL
+      local page = { icon = vim.NIL }
+
+      local icon = pages.get_icon(page)
+
+      assert.is_nil(icon)
+    end)
+
+    it('should extract emoji icon', function()
+      local page = {
+        icon = {
+          type = 'emoji',
+          emoji = '📝',
+        },
+      }
+
+      local icon = pages.get_icon(page)
+
+      assert.are.equal('📝', icon)
+    end)
+
+    it('should return placeholder for external icon', function()
+      local page = {
+        icon = {
+          type = 'external',
+          external = { url = 'http://example.com/icon.png' },
+        },
+      }
+
+      local icon = pages.get_icon(page)
+
+      assert.are.equal('🔗', icon)
+    end)
+
+    it('should return placeholder for file icon', function()
+      local page = {
+        icon = {
+          type = 'file',
+          file = { url = 'http://notion.so/file.png' },
+        },
+      }
+
+      local icon = pages.get_icon(page)
+
+      assert.are.equal('📄', icon)
+    end)
+
+    it('should return nil for unknown icon type', function()
+      local page = {
+        icon = {
+          type = 'unknown_type',
+        },
+      }
+
+      local icon = pages.get_icon(page)
+
+      assert.is_nil(icon)
+    end)
+  end)
+
   -- Note: get() and search() are async and require mocking
   -- These would be integration tests or require a mock client
   describe('get (requires auth)', function()

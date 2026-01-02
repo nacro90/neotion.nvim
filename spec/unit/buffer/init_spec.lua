@@ -39,11 +39,11 @@ describe('neotion.buffer', function()
       assert.are.equal('neotion', ft)
     end)
 
-    it('should set buffer as not modifiable initially', function()
+    it('should set buffer as modifiable for editing', function()
       local bufnr = buffer.create('abc123def456')
 
       local modifiable = vim.api.nvim_get_option_value('modifiable', { buf = bufnr })
-      assert.is_false(modifiable)
+      assert.is_true(modifiable) -- Buffer is writable, read-only blocks protected by autocmd
     end)
 
     it('should set buftype to acwrite', function()

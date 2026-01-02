@@ -98,12 +98,12 @@ describe('neotion.config', function()
     end)
 
     it('should accept valid log_level', function()
-      local valid_levels = { 'trace', 'debug', 'info', 'warn', 'error' }
+      local valid_levels = { 'debug', 'info', 'warn', 'error', 'off' }
       for _, level in ipairs(valid_levels) do
         local ok, err = config.validate({
           log_level = level,
         })
-        assert.is_true(ok)
+        assert.is_true(ok, 'Expected ' .. level .. ' to be valid, got error: ' .. tostring(err))
         assert.is_nil(err)
       end
     end)

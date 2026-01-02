@@ -1,5 +1,8 @@
 [config]
-std = "lua51+vim"
+std = "lua51"
 
 [rules]
 global_usage = "allow"
+
+[globals]
+vim = { any = true }

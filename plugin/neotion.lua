@@ -62,6 +62,12 @@ local subcommand_tbl = {
       end
     end,
   },
+  create = {
+    impl = function(args, _)
+      local title = args[1]
+      require('neotion').create(title)
+    end,
+  },
 }
 
 ---@param opts table

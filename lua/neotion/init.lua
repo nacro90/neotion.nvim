@@ -51,8 +51,8 @@ function M.open(page_id)
 end
 
 ---Create a new Notion page
----@param opts table? Options for page creation
-function M.create(opts)
+---@param title string? Page title
+function M.create(title)
   -- TODO: Implement page creation
   vim.notify('[neotion] create() not yet implemented', vim.log.levels.WARN)
 end

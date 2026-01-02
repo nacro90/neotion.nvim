@@ -1,0 +1,5 @@
+[config]
+std = "lua51+vim"
+
+[rules]
+global_usage = "allow"

@@ -1,0 +1,182 @@
+*neotion.txt*  Notion integration for Neovim
+
+Author:  nacro90
+License: MIT
+
+==============================================================================
+CONTENTS                                                    *neotion-contents*
+
+  Introduction ............................ |neotion-introduction|
+  Requirements ............................ |neotion-requirements|
+  Setup ................................... |neotion-setup|
+  Configuration ........................... |neotion-configuration|
+  Commands ................................ |neotion-commands|
+  Mappings ................................ |neotion-mappings|
+  API ..................................... |neotion-api|
+  Health Check ............................ |neotion-health|
+
+==============================================================================
+INTRODUCTION                                            *neotion-introduction*
+
+neotion.nvim is a Notion integration for Neovim with zero data loss
+synchronization. It preserves all Notion metadata including block IDs,
+colors, mentions, toggles, and other rich content.
+
+==============================================================================
+REQUIREMENTS                                            *neotion-requirements*
+
+- Neovim 0.10+
+- Notion API token (https://www.notion.so/my-integrations)
+- curl
+
+Optional:~
+- nvim-treesitter for enhanced syntax highlighting
+- telescope.nvim or fzf-lua for page search
+- nvim-cmp for completion
+
+==============================================================================
+SETUP                                                          *neotion-setup*
+
+Using lazy.nvim: >lua
+  {
+    'nacro90/neotion.nvim',
+    opts = {
+      api_token = vim.env.NOTION_API_TOKEN,
+    },
+  }
+<
+
+Minimal setup: >lua
+  require('neotion').setup({
+    api_token = 'secret_xxx',
+  })
+<
+
+==============================================================================
+CONFIGURATION                                          *neotion-configuration*
+
+                                                           *neotion.setup()*
+neotion.setup({opts})
+
+  Configure neotion with the given options. All options are optional.
+
+  Options:~
+    api_token      (string)   Notion API integration token
+    sync_interval  (number)   Debounce interval in ms (100-60000, default: 2000)
+    auto_sync      (boolean)  Enable auto-sync on changes (default: true)
+    conceal_level  (number)   Conceal level 0-3 (default: 2)
+    icons          (table)    UI icons configuration
+    keymaps        (table)    Keymap configuration
+    log_level      (string)   Log level (default: "info")
+
+  Icons:~
+    synced         (string)   Synced indicator (default: "✓")
+    pending        (string)   Pending indicator (default: "○")
+    error          (string)   Error indicator (default: "✗")
+    toggle_open    (string)   Open toggle (default: "▼")
+    toggle_closed  (string)   Closed toggle (default: "▶")
+
+  Keymaps:~
+    Set to `false` to disable a keymap.
+
+    sync           (string)   Sync buffer (default: "<leader>ns")
+    push           (string)   Force push (default: "<leader>np")
+    pull           (string)   Force pull (default: "<leader>nl")
+    goto_parent    (string)   Go to parent (default: "<leader>nu")
+    goto_link      (string)   Follow link (default: "<leader>ng")
+    search         (string)   Search pages (default: "<leader>nf")
+
+==============================================================================
+COMMANDS                                                    *neotion-commands*
+
+                                                                    *:Neotion*
+:Neotion {subcommand} [args]
+
+  Subcommands:~
+    open {page_id}   Open a Notion page by ID
+    sync             Sync current buffer with Notion
+    push             Force push local changes to Notion
+    pull             Force pull remote changes from Notion
+    search           Search Notion pages
+    status           Show sync status for current buffer
+
+==============================================================================
+MAPPINGS                                                    *neotion-mappings*
+
+<Plug> mappings are available for all operations:
+
+  <Plug>(NeotionSync)        Sync current buffer
+  <Plug>(NeotionPush)        Force push
+  <Plug>(NeotionPull)        Force pull
+  <Plug>(NeotionGotoParent)  Navigate to parent page
+  <Plug>(NeotionGotoLink)    Follow link under cursor
+  <Plug>(NeotionSearch)      Search pages
+  <Plug>(NeotionBlockUp)     Move block up
+  <Plug>(NeotionBlockDown)   Move block down
+  <Plug>(NeotionBlockIndent) Indent block
+  <Plug>(NeotionBlockDedent) Dedent block
+
+==============================================================================
+API                                                              *neotion-api*
+
+                                                             *neotion.open()*
+neotion.open({page_id})
+  Open a Notion page in a new buffer.
+
+  Parameters:~
+    {page_id}  (string) Notion page ID
+
+                                                           *neotion.create()*
+neotion.create([{opts}])
+  Create a new Notion page.
+
+                                                           *neotion.delete()*
+neotion.delete()
+  Delete the current Notion page.
+
+                                                             *neotion.sync()*
+neotion.sync()
+  Sync current buffer with Notion.
+
+                                                             *neotion.push()*
+neotion.push()
+  Force push local changes to Notion.
+
+                                                             *neotion.pull()*
+neotion.pull()
+  Force pull remote changes from Notion.
+
+                                                      *neotion.goto_parent()*
+neotion.goto_parent()
+  Navigate to parent page.
+
+                                                        *neotion.goto_link()*
+neotion.goto_link()
+  Follow link under cursor.
+
+                                                           *neotion.search()*
+neotion.search([{opts}])
+  Search Notion pages.
+
+                                                           *neotion.status()*
+neotion.status()
+  Get sync status for current buffer.
+
+  Returns:~
+    (table|nil) Sync status or nil if not a neotion buffer
+
+==============================================================================
+HEALTH CHECK                                                  *neotion-health*
+
+Run |:checkhealth| neotion to verify your setup:
+
+  :checkhealth neotion
+
+This checks:
+- Neovim version (0.10+ required)
+- curl availability
+- API token configuration
+- Optional dependencies
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

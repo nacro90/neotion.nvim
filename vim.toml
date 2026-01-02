@@ -1,0 +1,7 @@
+# Selene vim standard library definition
+[selene]
+base = "lua51"
+name = "vim"
+
+[vim]
+any = true

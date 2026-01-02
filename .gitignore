@@ -1,0 +1,13 @@
+# Test dependencies
+.deps/
+
+# Neovim
+*.swp
+*.swo
+*~
+
+# Tags
+tags
+
+# Doc tags
+doc/tags

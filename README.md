@@ -36,13 +36,31 @@ Notion integration for Neovim with **zero data loss** synchronization.
 | `<c:red>text</c>` | colored text |
 | `[text](url)` | link |
 
-### Planned
-- Real-time formatting preview (markers render as you type)
-- Default keyboard shortcuts (`<C-b>` for bold, etc.)
-- Block-level markers with concealment
-- Real-time auto-sync
-- nvim-cmp completion for `/`, `@`, and `[[` triggers
-- Block creation and deletion
+### Roadmap
+
+| Phase | Goal | Status |
+|-------|------|--------|
+| 1-5.5 | Foundation + Inline Formatting | ✅ Complete |
+| 5.6 | Real-time rendering + `gf` navigation | 🔜 Next |
+| 5.7 | Basic blocks (divider, quote, bullet, code) | Planned |
+| 6 | Rate limiting (API protection) | Planned |
+| 7 | SQLite cache (offline metadata) | Planned |
+| 8 | Live search + `[[` completion | Planned |
+| 9 | Slash commands + advanced blocks | Planned |
+| 10 | Full lossless + conflict resolution | Planned |
+
+### Coming Soon (Phase 5.6-5.7)
+- **Real-time formatting** - Markers render as you type
+- **Link navigation** - `gf` follows links under cursor
+- **Default keymaps** - Optional `<C-b>` for bold, etc.
+- **More block types** - Divider, quote, bullet list, code blocks
+
+### Future Plans
+- `[[` wiki-link completion for page linking
+- `/` slash commands for block creation
+- Advanced blocks: todos, toggles, callouts, numbered lists
+- SQLite cache for offline metadata access
+- Conflict resolution UI
 
 ## Requirements
 
@@ -209,14 +227,14 @@ Available `<Plug>` mappings:
 - `<Plug>(NeotionUnderline)` - Underline
 - `<Plug>(NeotionColor)` - Color (opens color picker)
 
-**Formatting (visual mode):**
-- `<Plug>(NeotionVisualBold)` - Bold selection
-- `<Plug>(NeotionVisualItalic)` - Italic selection
+**Formatting (visual mode, same mappings work in visual):**
+- `<Plug>(NeotionBold)` - Bold selection
+- `<Plug>(NeotionItalic)` - Italic selection
 - ... (similar for other formats)
 
 **Formatting (toggle word under cursor):**
-- `<Plug>(NeotionToggleBold)` - Toggle bold on word
-- `<Plug>(NeotionToggleItalic)` - Toggle italic on word
+- `<Plug>(NeotionBoldToggle)` - Toggle bold on word
+- `<Plug>(NeotionItalicToggle)` - Toggle italic on word
 - ... (similar for other formats)
 
 ## Health Check

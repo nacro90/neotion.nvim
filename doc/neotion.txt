@@ -98,23 +98,76 @@ COMMANDS                                                    *neotion-commands*
     push             Force push local changes to Notion
     pull             Force pull remote changes from Notion
     search           Search Notion pages
+    recent           Show recently opened pages
     status           Show sync status for current buffer
+
+  Formatting:~
+    bold             Toggle bold on word/selection
+    italic           Toggle italic on word/selection
+    strikethrough    Toggle strikethrough on word/selection
+    code             Toggle code on word/selection
+    underline        Toggle underline on word/selection
+    color {color}    Apply color (red, blue, green, etc.)
+    unformat         Remove all formatting from word/selection
+
+  Logging:~
+    log show         Show last 100 lines in split buffer
+    log tail [n]     Show last n lines (default: 100)
+    log clear        Clear the log file
+    log path         Show log file path
+    log level [lvl]  Get/set log level (DEBUG, INFO, WARN, ERROR, OFF)
 
 ==============================================================================
 MAPPINGS                                                    *neotion-mappings*
 
 <Plug> mappings are available for all operations:
 
+Sync:~
   <Plug>(NeotionSync)        Sync current buffer
   <Plug>(NeotionPush)        Force push
   <Plug>(NeotionPull)        Force pull
+
+Navigation:~
   <Plug>(NeotionGotoParent)  Navigate to parent page
-  <Plug>(NeotionGotoLink)    Follow link under cursor
+  <Plug>(NeotionGotoLink)    Follow link under cursor (also mapped to `gf`)
   <Plug>(NeotionSearch)      Search pages
+
+Blocks:~
   <Plug>(NeotionBlockUp)     Move block up
   <Plug>(NeotionBlockDown)   Move block down
   <Plug>(NeotionBlockIndent) Indent block
   <Plug>(NeotionBlockDedent) Dedent block
+
+Formatting (operator-pending, use with motion like `iw`):~
+  <Plug>(NeotionBold)           Bold
+  <Plug>(NeotionItalic)         Italic
+  <Plug>(NeotionStrikethrough)  Strikethrough
+  <Plug>(NeotionCode)           Code
+  <Plug>(NeotionUnderline)      Underline
+  <Plug>(NeotionColor)          Color (opens picker)
+
+Formatting (visual mode, same mappings work in visual):~
+  <Plug>(NeotionBold)           Bold selection
+  <Plug>(NeotionItalic)         Italic selection
+  <Plug>(NeotionStrikethrough)  Strikethrough selection
+  <Plug>(NeotionCode)           Code selection
+  <Plug>(NeotionUnderline)      Underline selection
+  <Plug>(NeotionColor)          Color selection (opens picker)
+
+Formatting (toggle word under cursor):~
+  <Plug>(NeotionBoldToggle)           Toggle bold
+  <Plug>(NeotionItalicToggle)         Toggle italic
+  <Plug>(NeotionStrikethroughToggle)  Toggle strikethrough
+  <Plug>(NeotionCodeToggle)           Toggle code
+  <Plug>(NeotionUnderlineToggle)      Toggle underline
+  <Plug>(NeotionColorToggle)          Toggle color (opens picker)
+
+Formatting (insert mode, inserts pair markers):~
+  <Plug>(NeotionBoldPair)             Insert `**|**`
+  <Plug>(NeotionItalicPair)           Insert `*|*`
+  <Plug>(NeotionStrikethroughPair)    Insert `~|~`
+  <Plug>(NeotionCodePair)             Insert `` `|` ``
+  <Plug>(NeotionUnderlinePair)        Insert `<u>|</u>`
 
 ==============================================================================
 API                                                              *neotion-api*

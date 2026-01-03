@@ -112,23 +112,10 @@ function HeadingBlock:serialize()
   result[new_block_key] = result[new_block_key] or {}
 
   if text_changed or new_block_key ~= original_block_key then
-    -- Text or level changed: create new plain text rich_text
-    result[new_block_key].rich_text = {
-      {
-        type = 'text',
-        text = { content = self.text, link = nil },
-        plain_text = self.text,
-        href = nil,
-        annotations = {
-          bold = false,
-          italic = false,
-          strikethrough = false,
-          underline = false,
-          code = false,
-          color = 'default',
-        },
-      },
-    }
+    -- Text or level changed: parse markers to rich_text format
+    -- This converts **bold**, *italic*, [link](url), etc. to API format
+    local notion = require('neotion.format.notion')
+    result[new_block_key].rich_text = notion.parse_to_api(self.text)
   else
     -- Text unchanged: preserve original rich_text
     result[new_block_key].rich_text = self.rich_text

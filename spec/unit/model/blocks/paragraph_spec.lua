@@ -189,7 +189,110 @@ describe('neotion.model.blocks.paragraph', function()
       assert.are.same(original_rich_text, serialized.paragraph.rich_text)
     end)
 
-    it('should create plain rich_text when text changed', function()
+    it('should parse markers when text changed with formatting', function()
+      local raw = {
+        id = 'test',
+        type = 'paragraph',
+        paragraph = {
+          rich_text = {
+            {
+              type = 'text',
+              plain_text = 'Original',
+              annotations = { bold = false },
+            },
+          },
+        },
+      }
+      local block = paragraph_module.new(raw)
+
+      -- Modify text with bold markers
+      block.text = '**Bold text**'
+
+      local serialized = block:serialize()
+
+      -- Should have parsed bold formatting
+      assert.are.equal(1, #serialized.paragraph.rich_text)
+      assert.are.equal('Bold text', serialized.paragraph.rich_text[1].plain_text)
+      assert.are.equal('Bold text', serialized.paragraph.rich_text[1].text.content)
+      assert.is_true(serialized.paragraph.rich_text[1].annotations.bold)
+    end)
+
+    it('should parse mixed formatting markers', function()
+      local raw = {
+        id = 'test',
+        type = 'paragraph',
+        paragraph = { rich_text = {} },
+      }
+      local block = paragraph_module.new(raw)
+
+      block.text = 'Hello **bold** and *italic*'
+
+      local serialized = block:serialize()
+
+      assert.are.equal(4, #serialized.paragraph.rich_text)
+      assert.are.equal('Hello ', serialized.paragraph.rich_text[1].text.content)
+      assert.is_false(serialized.paragraph.rich_text[1].annotations.bold)
+      assert.are.equal('bold', serialized.paragraph.rich_text[2].text.content)
+      assert.is_true(serialized.paragraph.rich_text[2].annotations.bold)
+      assert.are.equal(' and ', serialized.paragraph.rich_text[3].text.content)
+      assert.are.equal('italic', serialized.paragraph.rich_text[4].text.content)
+      assert.is_true(serialized.paragraph.rich_text[4].annotations.italic)
+    end)
+
+    it('should parse link markers to href', function()
+      local raw = {
+        id = 'test',
+        type = 'paragraph',
+        paragraph = { rich_text = {} },
+      }
+      local block = paragraph_module.new(raw)
+
+      block.text = '[click here](https://example.com)'
+
+      local serialized = block:serialize()
+
+      assert.are.equal(1, #serialized.paragraph.rich_text)
+      assert.are.equal('click here', serialized.paragraph.rich_text[1].text.content)
+      assert.are.equal('https://example.com', serialized.paragraph.rich_text[1].text.link.url)
+      assert.are.equal('https://example.com', serialized.paragraph.rich_text[1].href)
+    end)
+
+    it('should parse formatted link markers', function()
+      local raw = {
+        id = 'test',
+        type = 'paragraph',
+        paragraph = { rich_text = {} },
+      }
+      local block = paragraph_module.new(raw)
+
+      block.text = '**[bold link](https://example.com)**'
+
+      local serialized = block:serialize()
+
+      assert.are.equal(1, #serialized.paragraph.rich_text)
+      assert.are.equal('bold link', serialized.paragraph.rich_text[1].text.content)
+      assert.are.equal('https://example.com', serialized.paragraph.rich_text[1].text.link.url)
+      assert.is_true(serialized.paragraph.rich_text[1].annotations.bold)
+    end)
+
+    it('should parse color markers', function()
+      local raw = {
+        id = 'test',
+        type = 'paragraph',
+        paragraph = { rich_text = {} },
+      }
+      local block = paragraph_module.new(raw)
+
+      block.text = '<c:red>colored text</c>'
+
+      local serialized = block:serialize()
+
+      assert.are.equal(1, #serialized.paragraph.rich_text)
+      assert.are.equal('colored text', serialized.paragraph.rich_text[1].text.content)
+      assert.are.equal('red', serialized.paragraph.rich_text[1].annotations.color)
+    end)
+
+    it('should create plain rich_text when text changed without markers', function()
       local raw = {
         id = 'test',
         type = 'paragraph',
@@ -205,7 +308,7 @@ describe('neotion.model.blocks.paragraph', function()
       }
       local block = paragraph_module.new(raw)
 
-      -- Modify text
+      -- Modify text without any markers
       block.text = 'Modified'
 
       local serialized = block:serialize()

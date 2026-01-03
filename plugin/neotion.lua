@@ -140,6 +140,60 @@ local subcommand_tbl = {
         :totable()
     end,
   },
+  -- Formatting subcommands (Phase 5.5)
+  bold = {
+    impl = function(_, opts)
+      local formatting = require('neotion.commands.formatting')
+      formatting.subcommands.bold(opts)
+    end,
+  },
+  italic = {
+    impl = function(_, opts)
+      local formatting = require('neotion.commands.formatting')
+      formatting.subcommands.italic(opts)
+    end,
+  },
+  strikethrough = {
+    impl = function(_, opts)
+      local formatting = require('neotion.commands.formatting')
+      formatting.subcommands.strikethrough(opts)
+    end,
+  },
+  code = {
+    impl = function(_, opts)
+      local formatting = require('neotion.commands.formatting')
+      formatting.subcommands.code(opts)
+    end,
+  },
+  underline = {
+    impl = function(_, opts)
+      local formatting = require('neotion.commands.formatting')
+      formatting.subcommands.underline(opts)
+    end,
+  },
+  color = {
+    impl = function(args, opts)
+      local formatting = require('neotion.commands.formatting')
+      -- Pass the full fargs including 'color' so handler can extract color name
+      opts.fargs = vim.list_extend({ 'color' }, args)
+      formatting.subcommands.color(opts)
+    end,
+    complete = function(subcmd_arg_lead)
+      local formatting = require('neotion.commands.formatting')
+      return vim
+        .iter(formatting.color_names)
+        :filter(function(s)
+          return s:find(subcmd_arg_lead, 1, true) == 1
+        end)
+        :totable()
+    end,
+  },
+  unformat = {
+    impl = function(_, opts)
+      local formatting = require('neotion.commands.formatting')
+      formatting.subcommands.unformat(opts)
+    end,
+  },
 }
 
 ---@param opts table
@@ -228,6 +282,134 @@ end, { desc = 'Neotion: Indent block' })
 vim.keymap.set('n', '<Plug>(NeotionBlockDedent)', function()
   require('neotion').block_dedent()
 end, { desc = 'Neotion: Dedent block' })
+
+-- Formatting <Plug> mappings (Phase 5.5)
+-- Note: Buffer-local mappings are set up by input.setup() when a neotion buffer is opened
+-- These global mappings provide a fallback and documentation
+
+-- Bold
+vim.keymap.set('n', '<Plug>(NeotionBold)', function()
+  return require('neotion.input.shortcuts').setup_operator('bold')
+end, { expr = true, desc = 'Neotion: Bold (operator)' })
+
+vim.keymap.set('n', '<Plug>(NeotionBoldToggle)', function()
+  require('neotion.input.shortcuts').toggle_word('bold')
+end, { desc = 'Neotion: Toggle bold on word' })
+
+vim.keymap.set('x', '<Plug>(NeotionBold)', function()
+  require('neotion.input.shortcuts').visual_format('bold')
+end, { desc = 'Neotion: Bold (visual)' })
+
+vim.keymap.set('i', '<Plug>(NeotionBoldPair)', function()
+  return require('neotion.input.shortcuts').insert_pair('bold')
+end, { expr = true, desc = 'Neotion: Insert bold pair' })
+
+-- Italic
+vim.keymap.set('n', '<Plug>(NeotionItalic)', function()
+  return require('neotion.input.shortcuts').setup_operator('italic')
+end, { expr = true, desc = 'Neotion: Italic (operator)' })
+
+vim.keymap.set('n', '<Plug>(NeotionItalicToggle)', function()
+  require('neotion.input.shortcuts').toggle_word('italic')
+end, { desc = 'Neotion: Toggle italic on word' })
+
+vim.keymap.set('x', '<Plug>(NeotionItalic)', function()
+  require('neotion.input.shortcuts').visual_format('italic')
+end, { desc = 'Neotion: Italic (visual)' })
+
+vim.keymap.set('i', '<Plug>(NeotionItalicPair)', function()
+  return require('neotion.input.shortcuts').insert_pair('italic')
+end, { expr = true, desc = 'Neotion: Insert italic pair' })
+
+-- Strikethrough
+vim.keymap.set('n', '<Plug>(NeotionStrikethrough)', function()
+  return require('neotion.input.shortcuts').setup_operator('strikethrough')
+end, { expr = true, desc = 'Neotion: Strikethrough (operator)' })
+
+vim.keymap.set('n', '<Plug>(NeotionStrikethroughToggle)', function()
+  require('neotion.input.shortcuts').toggle_word('strikethrough')
+end, { desc = 'Neotion: Toggle strikethrough on word' })
+
+vim.keymap.set('x', '<Plug>(NeotionStrikethrough)', function()
+  require('neotion.input.shortcuts').visual_format('strikethrough')
+end, { desc = 'Neotion: Strikethrough (visual)' })
+
+vim.keymap.set('i', '<Plug>(NeotionStrikethroughPair)', function()
+  return require('neotion.input.shortcuts').insert_pair('strikethrough')
+end, { expr = true, desc = 'Neotion: Insert strikethrough pair' })
+
+-- Code
+vim.keymap.set('n', '<Plug>(NeotionCode)', function()
+  return require('neotion.input.shortcuts').setup_operator('code')
+end, { expr = true, desc = 'Neotion: Code (operator)' })
+
+vim.keymap.set('n', '<Plug>(NeotionCodeToggle)', function()
+  require('neotion.input.shortcuts').toggle_word('code')
+end, { desc = 'Neotion: Toggle code on word' })
+
+vim.keymap.set('x', '<Plug>(NeotionCode)', function()
+  require('neotion.input.shortcuts').visual_format('code')
+end, { desc = 'Neotion: Code (visual)' })
+
+vim.keymap.set('i', '<Plug>(NeotionCodePair)', function()
+  return require('neotion.input.shortcuts').insert_pair('code')
+end, { expr = true, desc = 'Neotion: Insert code pair' })
+
+-- Underline
+vim.keymap.set('n', '<Plug>(NeotionUnderline)', function()
+  return require('neotion.input.shortcuts').setup_operator('underline')
+end, { expr = true, desc = 'Neotion: Underline (operator)' })
+
+vim.keymap.set('n', '<Plug>(NeotionUnderlineToggle)', function()
+  require('neotion.input.shortcuts').toggle_word('underline')
+end, { desc = 'Neotion: Toggle underline on word' })
+
+vim.keymap.set('x', '<Plug>(NeotionUnderline)', function()
+  require('neotion.input.shortcuts').visual_format('underline')
+end, { desc = 'Neotion: Underline (visual)' })
+
+vim.keymap.set('i', '<Plug>(NeotionUnderlinePair)', function()
+  return require('neotion.input.shortcuts').insert_pair('underline')
+end, { expr = true, desc = 'Neotion: Insert underline pair' })
+
+-- Color (requires async color picker, then operator)
+vim.keymap.set('n', '<Plug>(NeotionColor)', function()
+  vim.ui.select(
+    { 'red', 'blue', 'green', 'yellow', 'orange', 'pink', 'purple', 'brown', 'gray' },
+    { prompt = 'Select color:' },
+    function(color)
+      if color then
+        local shortcuts = require('neotion.input.shortcuts')
+        shortcuts.setup_operator('color', color)
+        vim.api.nvim_feedkeys('g@', 'n', false)
+      end
+    end
+  )
+end, { desc = 'Neotion: Color (operator)' })
+
+vim.keymap.set('n', '<Plug>(NeotionColorToggle)', function()
+  vim.ui.select(
+    { 'red', 'blue', 'green', 'yellow', 'orange', 'pink', 'purple', 'brown', 'gray' },
+    { prompt = 'Select color:' },
+    function(color)
+      if color then
+        require('neotion.input.shortcuts').toggle_word('color', color)
+      end
+    end
+  )
+end, { desc = 'Neotion: Toggle color on word' })
+
+vim.keymap.set('x', '<Plug>(NeotionColor)', function()
+  vim.ui.select(
+    { 'red', 'blue', 'green', 'yellow', 'orange', 'pink', 'purple', 'brown', 'gray' },
+    { prompt = 'Select color:' },
+    function(color)
+      if color then
+        require('neotion.input.shortcuts').visual_format('color', color)
+      end
+    end
+  )
+end, { desc = 'Neotion: Color (visual)' })
 
 -- Autocmds for neotion buffers
 

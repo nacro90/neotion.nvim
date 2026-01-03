@@ -482,6 +482,31 @@ describe('neotion.format.notion', function()
 
       assert.are.equal('**test**', result)
     end)
+
+    it('should handle vim.NIL href gracefully (defensive)', function()
+      -- This tests defensive handling in case vim.NIL bypasses from_api normalization
+      local segment = types.RichTextSegment.new('test', {
+        annotations = types.Annotation.new(),
+      })
+      -- Manually set href to vim.NIL to simulate edge case
+      segment.href = vim.NIL
+
+      -- Should not throw an error, should treat vim.NIL as no link
+      local result = notion.render_segment(segment)
+
+      assert.are.equal('test', result)
+    end)
+
+    it('should render segment with valid href', function()
+      local segment = types.RichTextSegment.new('click me', {
+        annotations = types.Annotation.new(),
+        href = 'https://example.com',
+      })
+
+      local result = notion.render_segment(segment)
+
+      assert.are.equal('[click me](https://example.com)', result)
+    end)
   end)
 
   describe('roundtrip', function()
@@ -730,6 +755,318 @@ describe('neotion.format.notion', function()
         -- Opening *** at 0-3
         assert.are.equal(0, result.conceal_regions[1].start_col)
         assert.are.equal(3, result.conceal_regions[1].end_col)
+      end)
+    end)
+  end)
+
+  describe('parse_to_api', function()
+    it('should have parse_to_api function', function()
+      assert.is_function(notion.parse_to_api)
+    end)
+
+    it('should return empty array for empty string', function()
+      local result = notion.parse_to_api('')
+
+      assert.are.equal(0, #result)
+    end)
+
+    it('should convert plain text to API format', function()
+      local result = notion.parse_to_api('hello world')
+
+      assert.are.equal(1, #result)
+      assert.are.equal('text', result[1].type)
+      assert.are.equal('hello world', result[1].text.content)
+      assert.are.equal('hello world', result[1].plain_text)
+      assert.is_false(result[1].annotations.bold)
+    end)
+
+    it('should convert bold text to API format', function()
+      local result = notion.parse_to_api('**bold**')
+
+      assert.are.equal(1, #result)
+      assert.are.equal('bold', result[1].text.content)
+      assert.is_true(result[1].annotations.bold)
+      assert.is_false(result[1].annotations.italic)
+    end)
+
+    it('should convert mixed formatting to API format', function()
+      local result = notion.parse_to_api('hello **bold** world')
+
+      assert.are.equal(3, #result)
+      assert.are.equal('hello ', result[1].text.content)
+      assert.is_false(result[1].annotations.bold)
+      assert.are.equal('bold', result[2].text.content)
+      assert.is_true(result[2].annotations.bold)
+      assert.are.equal(' world', result[3].text.content)
+      assert.is_false(result[3].annotations.bold)
+    end)
+
+    it('should convert italic text to API format', function()
+      local result = notion.parse_to_api('*italic*')
+
+      assert.are.equal(1, #result)
+      assert.are.equal('italic', result[1].text.content)
+      assert.is_true(result[1].annotations.italic)
+    end)
+
+    it('should convert strikethrough to API format', function()
+      local result = notion.parse_to_api('~strike~')
+
+      assert.are.equal(1, #result)
+      assert.are.equal('strike', result[1].text.content)
+      assert.is_true(result[1].annotations.strikethrough)
+    end)
+
+    it('should convert code to API format', function()
+      local result = notion.parse_to_api('`code`')
+
+      assert.are.equal(1, #result)
+      assert.are.equal('code', result[1].text.content)
+      assert.is_true(result[1].annotations.code)
+    end)
+
+    it('should convert underline to API format', function()
+      local result = notion.parse_to_api('<u>underline</u>')
+
+      assert.are.equal(1, #result)
+      assert.are.equal('underline', result[1].text.content)
+      assert.is_true(result[1].annotations.underline)
+    end)
+
+    it('should convert color to API format', function()
+      local result = notion.parse_to_api('<c:red>colored</c>')
+
+      assert.are.equal(1, #result)
+      assert.are.equal('colored', result[1].text.content)
+      assert.are.equal('red', result[1].annotations.color)
+    end)
+
+    it('should convert nested formatting to API format', function()
+      local result = notion.parse_to_api('***bold italic***')
+
+      assert.are.equal(1, #result)
+      assert.are.equal('bold italic', result[1].text.content)
+      assert.is_true(result[1].annotations.bold)
+      assert.is_true(result[1].annotations.italic)
+    end)
+
+    it('should handle complex mixed formatting', function()
+      local result = notion.parse_to_api('**bold** and *italic* and `code`')
+
+      assert.are.equal(5, #result)
+      assert.is_true(result[1].annotations.bold)
+      assert.is_false(result[2].annotations.bold)
+      assert.is_true(result[3].annotations.italic)
+      assert.is_false(result[4].annotations.italic)
+      assert.is_true(result[5].annotations.code)
+    end)
+
+    describe('round-trip', function()
+      it('should preserve formatting in parse -> render -> parse cycle', function()
+        local original = '**bold** *italic* ~strike~ `code`'
+        local parsed1 = notion.parse(original)
+        local rendered = notion.render(parsed1)
+        local parsed2 = notion.parse(rendered)
+
+        assert.are.equal(#parsed1, #parsed2)
+        for i, seg in ipairs(parsed1) do
+          assert.are.equal(seg.text, parsed2[i].text)
+          assert.are.equal(seg.annotations.bold, parsed2[i].annotations.bold)
+          assert.are.equal(seg.annotations.italic, parsed2[i].annotations.italic)
+          assert.are.equal(seg.annotations.strikethrough, parsed2[i].annotations.strikethrough)
+          assert.are.equal(seg.annotations.code, parsed2[i].annotations.code)
+        end
+      end)
+    end)
+  end)
+
+  describe('link syntax', function()
+    describe('parse', function()
+      it('should parse markdown link [text](url)', function()
+        local segments = notion.parse('[link text](https://example.com)')
+
+        assert.are.equal(1, #segments)
+        assert.are.equal('link text', segments[1].text)
+        assert.are.equal('https://example.com', segments[1].href)
+      end)
+
+      it('should parse link with surrounding text', function()
+        local segments = notion.parse('click [here](https://example.com) now')
+
+        assert.are.equal(3, #segments)
+        assert.are.equal('click ', segments[1].text)
+        assert.is_nil(segments[1].href)
+        assert.are.equal('here', segments[2].text)
+        assert.are.equal('https://example.com', segments[2].href)
+        assert.are.equal(' now', segments[3].text)
+        assert.is_nil(segments[3].href)
+      end)
+
+      it('should parse multiple links', function()
+        local segments = notion.parse('[one](http://1.com) and [two](http://2.com)')
+
+        assert.are.equal(3, #segments)
+        assert.are.equal('one', segments[1].text)
+        assert.are.equal('http://1.com', segments[1].href)
+        assert.are.equal(' and ', segments[2].text)
+        assert.is_nil(segments[2].href)
+        assert.are.equal('two', segments[3].text)
+        assert.are.equal('http://2.com', segments[3].href)
+      end)
+
+      it('should parse link with formatting', function()
+        local segments = notion.parse('**[bold link](https://example.com)**')
+
+        assert.are.equal(1, #segments)
+        assert.are.equal('bold link', segments[1].text)
+        assert.are.equal('https://example.com', segments[1].href)
+        assert.is_true(segments[1].annotations.bold)
+      end)
+
+      it('should parse link inside formatted text', function()
+        local segments = notion.parse('**click [here](https://example.com) now**')
+
+        assert.are.equal(3, #segments)
+        assert.are.equal('click ', segments[1].text)
+        assert.is_true(segments[1].annotations.bold)
+        assert.is_nil(segments[1].href)
+        assert.are.equal('here', segments[2].text)
+        assert.are.equal('https://example.com', segments[2].href)
+        assert.is_true(segments[2].annotations.bold)
+        assert.are.equal(' now', segments[3].text)
+        assert.is_true(segments[3].annotations.bold)
+        assert.is_nil(segments[3].href)
+      end)
+
+      it('should handle empty link text', function()
+        local segments = notion.parse('[](https://example.com)')
+
+        assert.are.equal(1, #segments)
+        assert.are.equal('', segments[1].text)
+        assert.are.equal('https://example.com', segments[1].href)
+      end)
+
+      it('should handle link with special characters in url', function()
+        local segments = notion.parse('[search](https://google.com/search?q=hello+world)')
+
+        assert.are.equal(1, #segments)
+        assert.are.equal('search', segments[1].text)
+        assert.are.equal('https://google.com/search?q=hello+world', segments[1].href)
+      end)
+
+      it('should not parse incomplete link syntax [text](', function()
+        local segments = notion.parse('[incomplete](')
+
+        -- Should be treated as literal text
+        assert.are.equal(1, #segments)
+        assert.are.equal('[incomplete](', segments[1].text)
+        assert.is_nil(segments[1].href)
+      end)
+
+      it('should not parse malformed link [text]url)', function()
+        local segments = notion.parse('[text]url)')
+
+        assert.are.equal(1, #segments)
+        assert.are.equal('[text]url)', segments[1].text)
+        assert.is_nil(segments[1].href)
+      end)
+    end)
+
+    describe('render', function()
+      it('should render link as [text](url)', function()
+        local segment = types.RichTextSegment.new('link text', {
+          href = 'https://example.com',
+        })
+        local rendered = notion.render({ segment })
+
+        assert.are.equal('[link text](https://example.com)', rendered)
+      end)
+
+      it('should render link with formatting', function()
+        local segment = types.RichTextSegment.new('bold link', {
+          href = 'https://example.com',
+          annotations = types.Annotation.new({ bold = true }),
+        })
+        local rendered = notion.render({ segment })
+
+        assert.are.equal('**[bold link](https://example.com)**', rendered)
+      end)
+
+      it('should render multiple links with text between', function()
+        local segments = {
+          types.RichTextSegment.new('one', { href = 'http://1.com' }),
+          types.RichTextSegment.new(' and '),
+          types.RichTextSegment.new('two', { href = 'http://2.com' }),
+        }
+        local rendered = notion.render(segments)
+
+        assert.are.equal('[one](http://1.com) and [two](http://2.com)', rendered)
+      end)
+    end)
+
+    describe('parse_to_api', function()
+      it('should convert link to API format', function()
+        local result = notion.parse_to_api('[click me](https://example.com)')
+
+        assert.are.equal(1, #result)
+        assert.are.equal('click me', result[1].text.content)
+        assert.are.equal('https://example.com', result[1].text.link.url)
+        assert.are.equal('https://example.com', result[1].href)
+      end)
+
+      it('should convert formatted link to API format', function()
+        local result = notion.parse_to_api('**[bold link](https://example.com)**')
+
+        assert.are.equal(1, #result)
+        assert.are.equal('bold link', result[1].text.content)
+        assert.are.equal('https://example.com', result[1].text.link.url)
+        assert.is_true(result[1].annotations.bold)
+      end)
+
+      it('should handle text without link having nil link field', function()
+        local result = notion.parse_to_api('plain text')
+
+        assert.are.equal(1, #result)
+        assert.is_nil(result[1].text.link)
+        assert.is_nil(result[1].href)
+      end)
+    end)
+
+    describe('concealment', function()
+      it('should return conceal regions for link markers', function()
+        local result = notion.parse_with_concealment('[link](https://example.com)')
+
+        assert.are.equal(1, #result.segments)
+        assert.are.equal('link', result.segments[1].text)
+        assert.are.equal('https://example.com', result.segments[1].href)
+
+        -- Should have conceal regions for [ and ](url)
+        assert.is_true(#result.conceal_regions >= 2)
+      end)
+    end)
+
+    describe('round-trip', function()
+      it('should preserve links in parse -> render -> parse cycle', function()
+        local original = '[click here](https://example.com)'
+        local parsed1 = notion.parse(original)
+        local rendered = notion.render(parsed1)
+        local parsed2 = notion.parse(rendered)
+
+        assert.are.equal(#parsed1, #parsed2)
+        assert.are.equal(parsed1[1].text, parsed2[1].text)
+        assert.are.equal(parsed1[1].href, parsed2[1].href)
+      end)
+
+      it('should preserve formatted links in cycle', function()
+        local original = '**[bold link](https://example.com)**'
+        local parsed1 = notion.parse(original)
+        local rendered = notion.render(parsed1)
+        local parsed2 = notion.parse(rendered)
+
+        assert.are.equal(#parsed1, #parsed2)
+        assert.are.equal(parsed1[1].text, parsed2[1].text)
+        assert.are.equal(parsed1[1].href, parsed2[1].href)
+        assert.are.equal(parsed1[1].annotations.bold, parsed2[1].annotations.bold)
       end)
     end)
   end)

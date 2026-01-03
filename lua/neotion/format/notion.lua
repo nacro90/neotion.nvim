@@ -496,11 +496,53 @@ local function parse_escape(state, base_annotations)
   if state.text:sub(state.pos, state.pos) == '\\' then
     local next_char = state.text:sub(state.pos + 1, state.pos + 1)
 
-    if next_char:match('[*~`<\\]') then
+    if next_char:match('[*~`<\\%[%]]') then
       add_segment(state, next_char, base_annotations)
       state.pos = state.pos + 2
       return true
     end
+  end
+
+  return false
+end
+
+--- Parse markdown-style link [text](url)
+---@param state ParseState
+---@param base_annotations neotion.Annotation
+---@return boolean matched
+local function parse_link(state, base_annotations)
+  -- Pattern: [text](url) where url cannot contain )
+  -- Match from current position
+  local link_text, url, end_pos = state.text:match('^%[(.-)%]%(([^%)]+)%)()', state.pos)
+
+  if link_text and url then
+    -- Create segment with href
+    local annotations = base_annotations:clone()
+
+    -- For links, we need to create a segment directly with href
+    -- The text inside may have formatting, so parse recursively
+    if link_text == '' then
+      -- Empty link text - create single empty segment with href
+      local segment = types.RichTextSegment.new('', {
+        annotations = annotations,
+        href = url,
+        start_col = state.current_col,
+      })
+      table.insert(state.segments, segment)
+    else
+      -- Parse inner text for formatting, then attach href to each segment
+      local inner_segments = M.parse_with_annotations(link_text, annotations)
+      for _, seg in ipairs(inner_segments) do
+        seg.start_col = seg.start_col + state.current_col
+        seg.end_col = seg.end_col + state.current_col
+        seg.href = url
+        table.insert(state.segments, seg)
+      end
+    end
+    state.current_col = state.current_col + #link_text
+
+    state.pos = end_pos
+    return true
   end
 
   return false
@@ -523,7 +565,9 @@ function M.parse_with_annotations(text, base_annotations)
 
     -- Try each format parser
     -- Order matters: bold_italic before bold before italic
+    -- Link should be early to handle [text](url) before [ is consumed
     matched = matched or parse_escape(state, base_annotations)
+    matched = matched or parse_link(state, base_annotations)
     matched = matched or parse_bold_italic(state, base_annotations)
     matched = matched or parse_bold(state, base_annotations)
     matched = matched or parse_italic(state, base_annotations)
@@ -607,6 +651,25 @@ function M.parse(text)
   end
 
   return M.parse_with_annotations(text, types.Annotation.new())
+end
+
+--- Parse text and convert to Notion API rich_text format
+--- This is the inverse of render() - converts buffer text with markers to API format
+---@param text string Buffer text with Notion syntax markers
+---@return table[] Notion API rich_text array
+function M.parse_to_api(text)
+  if text == '' then
+    return {}
+  end
+
+  local segments = M.parse(text)
+  local result = {}
+
+  for _, seg in ipairs(segments) do
+    table.insert(result, seg:to_api())
+  end
+
+  return result
 end
 
 ---@class neotion.ParseResult
@@ -929,6 +992,28 @@ function M.parse_with_concealment(text)
       end
     end
 
+    -- Link ([text](url))
+    if not matched then
+      local link_text, url, end_pos_plus_1 = state.text:match('^%[(.-)%]%(([^%)]+)%)()', state.pos)
+      if link_text and url then
+        local open_len = 1 -- [
+        local close_len = 3 + #url -- ](url)
+        -- Conceal opening [
+        add_conceal_region(state, start_original_col, start_original_col + open_len)
+        local seg = types.RichTextSegment.new(link_text, {
+          annotations = base_annotations,
+          href = url,
+          start_col = start_original_col + open_len,
+        })
+        seg.end_col = start_original_col + open_len + #link_text
+        table.insert(state.segments, seg)
+        -- Conceal ](url)
+        add_conceal_region(state, seg.end_col, seg.end_col + close_len)
+        state.pos = end_pos_plus_1
+        matched = true
+      end
+    end
+
     -- Plain character
     if not matched then
       local char = state.text:sub(state.pos, state.pos)
@@ -942,16 +1027,21 @@ function M.parse_with_concealment(text)
     end
   end
 
-  -- Merge adjacent segments with same annotations
+  -- Merge adjacent segments with same annotations and href
   local merged = {}
   if #state.segments > 0 then
     local current = state.segments[1]
     for i = 2, #state.segments do
       local next_seg = state.segments[i]
-      if current.annotations:equals(next_seg.annotations) and current.end_col == next_seg.start_col then
+      if
+        current.annotations:equals(next_seg.annotations)
+        and current.end_col == next_seg.start_col
+        and current.href == next_seg.href
+      then
         -- Extend current segment
         current = types.RichTextSegment.new(current.text .. next_seg.text, {
           annotations = current.annotations,
+          href = current.href,
           start_col = current.start_col,
         })
         current.end_col = next_seg.end_col
@@ -975,16 +1065,23 @@ end
 function M.render_segment(segment)
   local text = segment.text
   local ann = segment.annotations
+  local href = segment.href
+
+  -- Normalize vim.NIL (userdata from JSON decode) to nil
+  if href == vim.NIL then
+    href = nil
+  end
 
   -- Check if we need to escape the text
-  if
-    not ann.bold
-    and not ann.italic
-    and not ann.strikethrough
-    and not ann.code
-    and not ann.underline
-    and (not ann.color or ann.color == 'default')
-  then
+  local has_formatting = ann.bold
+    or ann.italic
+    or ann.strikethrough
+    or ann.code
+    or ann.underline
+    or (ann.color and ann.color ~= 'default')
+    or href
+
+  if not has_formatting then
     -- Plain text - escape special characters
     if needs_escaping(text) then
       text = escape_text(text)
@@ -998,7 +1095,16 @@ function M.render_segment(segment)
   -- Code is innermost (no nesting allowed)
   if ann.code then
     result = '`' .. result .. '`'
+    -- Link wrapping for code
+    if href then
+      result = '[' .. result .. '](' .. href .. ')'
+    end
     return result -- Code doesn't combine with other formatting
+  end
+
+  -- Link wrapping (innermost for non-code)
+  if href then
+    result = '[' .. result .. '](' .. href .. ')'
   end
 
   -- Color wrapping
@@ -1080,6 +1186,7 @@ function M.render(segments)
 
   for i, segment in ipairs(segments) do
     local ann = segment.annotations
+    local href = segment.href
     local prev_ann = i > 1 and segments[i - 1].annotations or nil
     local next_ann = i < #segments and segments[i + 1].annotations or nil
 
@@ -1089,12 +1196,18 @@ function M.render(segments)
     else
       local text = segment.text
 
+      -- Link wrapping (each segment with href gets its own link markers)
+      if href then
+        text = '[' .. text .. '](' .. href .. ')'
+      end
+
       -- Escape text if it's plain (no formatting that would wrap it)
       local has_any_format = ann.bold
         or ann.italic
         or ann.strikethrough
         or ann.underline
         or (ann.color and ann.color ~= 'default')
+        or href
       if not has_any_format and needs_escaping(text) then
         text = escape_text(text)
       end

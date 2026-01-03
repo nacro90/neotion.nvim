@@ -356,6 +356,52 @@ describe('neotion.format.types', function()
 
         assert.are.equal('@John', segment.text)
       end)
+
+      it('should handle vim.NIL href (userdata from JSON decode)', function()
+        -- vim.NIL is returned by vim.json.decode for null values
+        local api_item = {
+          type = 'text',
+          text = { content = 'Hello', link = vim.NIL },
+          plain_text = 'Hello',
+          annotations = {
+            bold = false,
+            italic = false,
+            strikethrough = false,
+            underline = false,
+            code = false,
+            color = 'default',
+          },
+          href = vim.NIL, -- This is userdata, not nil!
+        }
+
+        local segment = types.RichTextSegment.from_api(api_item)
+
+        assert.are.equal('Hello', segment.text)
+        -- href should be nil, not vim.NIL (userdata)
+        assert.is_nil(segment.href)
+      end)
+
+      it('should handle vim.NIL in text.link field', function()
+        local api_item = {
+          type = 'text',
+          text = { content = 'Hello', link = vim.NIL },
+          plain_text = 'Hello',
+          annotations = {
+            bold = false,
+            italic = false,
+            strikethrough = false,
+            underline = false,
+            code = false,
+            color = 'default',
+          },
+          href = nil,
+        }
+
+        local segment = types.RichTextSegment.from_api(api_item)
+
+        assert.are.equal('Hello', segment.text)
+        assert.is_nil(segment.href)
+      end)
     end)
 
     describe('to_api', function()

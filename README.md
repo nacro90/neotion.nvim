@@ -10,7 +10,9 @@ Notion integration for Neovim with **zero data loss** synchronization.
 ### Implemented
 - **Zero data loss** - Unsupported block types are read-only
 - **Block-level editing** - Edit paragraphs and headings directly
-- **Rich text preservation** - Unchanged text keeps formatting (bold, italic, colors)
+- **Inline formatting** - Use markers like `**bold**`, `*italic*`, `[link](url)`
+- **Rich text display** - Anti-conceal rendering with extmarks
+- **Rich text preservation** - Unchanged text keeps formatting
 - **Extmark tracking** - Accurate block-to-line mapping through edits
 - **Sync with confirmation** - Optional confirmation on ambiguous changes
 - **Telescope integration** - Page search with Telescope (falls back to vim.ui.select)
@@ -23,7 +25,20 @@ Notion integration for Neovim with **zero data loss** synchronization.
 | Heading 1/2/3 | Full editing |
 | Toggle, Code, Quote, etc. | Read-only (preserved) |
 
+### Inline Formatting Syntax
+| Syntax | Result |
+|--------|--------|
+| `**text**` | **bold** |
+| `*text*` | *italic* |
+| `~text~` | ~~strikethrough~~ |
+| `` `text` `` | `code` |
+| `<u>text</u>` | underline |
+| `<c:red>text</c>` | colored text |
+| `[text](url)` | link |
+
 ### Planned
+- Real-time formatting preview (markers render as you type)
+- Default keyboard shortcuts (`<C-b>` for bold, etc.)
 - Block-level markers with concealment
 - Real-time auto-sync
 - nvim-cmp completion for `/`, `@`, and `[[` triggers
@@ -151,6 +166,11 @@ export NOTION_API_TOKEN=secret_xxx
 | `:Neotion pull` | Force pull remote changes |
 | `:Neotion search` | Search Notion pages |
 | `:Neotion status` | Show sync status |
+| `:Neotion bold` | Toggle bold on word/selection |
+| `:Neotion italic` | Toggle italic on word/selection |
+| `:Neotion code` | Toggle code on word/selection |
+| `:Neotion color <color>` | Apply color (red, blue, green, etc.) |
+| `:Neotion unformat` | Remove all formatting from word/selection |
 
 ## Keymaps
 
@@ -164,16 +184,40 @@ vim.keymap.set('n', '<leader>nf', '<Plug>(NeotionSearch)')
 ```
 
 Available `<Plug>` mappings:
+
+**Sync:**
 - `<Plug>(NeotionSync)` - Sync current buffer
 - `<Plug>(NeotionPush)` - Force push to Notion
 - `<Plug>(NeotionPull)` - Force pull from Notion
+
+**Navigation:**
 - `<Plug>(NeotionGotoParent)` - Navigate to parent page
 - `<Plug>(NeotionGotoLink)` - Follow link under cursor
 - `<Plug>(NeotionSearch)` - Search pages
+
+**Blocks:**
 - `<Plug>(NeotionBlockUp)` - Move block up
 - `<Plug>(NeotionBlockDown)` - Move block down
 - `<Plug>(NeotionBlockIndent)` - Indent block
 - `<Plug>(NeotionBlockDedent)` - Dedent block
+
+**Formatting (operator-pending, use with motion like `iw`):**
+- `<Plug>(NeotionBold)` - Bold
+- `<Plug>(NeotionItalic)` - Italic
+- `<Plug>(NeotionStrikethrough)` - Strikethrough
+- `<Plug>(NeotionCode)` - Code
+- `<Plug>(NeotionUnderline)` - Underline
+- `<Plug>(NeotionColor)` - Color (opens color picker)
+
+**Formatting (visual mode):**
+- `<Plug>(NeotionVisualBold)` - Bold selection
+- `<Plug>(NeotionVisualItalic)` - Italic selection
+- ... (similar for other formats)
+
+**Formatting (toggle word under cursor):**
+- `<Plug>(NeotionToggleBold)` - Toggle bold on word
+- `<Plug>(NeotionToggleItalic)` - Toggle italic on word
+- ... (similar for other formats)
 
 ## Health Check
 

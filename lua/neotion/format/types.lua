@@ -247,6 +247,11 @@ function RichTextSegment.from_api(api_item, start_col)
   local annotations = Annotation.from_api(api_item.annotations)
   local href = api_item.href
 
+  -- Normalize vim.NIL (userdata from JSON decode) to nil
+  if href == vim.NIL then
+    href = nil
+  end
+
   -- Handle text type with link
   -- Note: api_item.text.link can be vim.NIL (userdata) from JSON decode
   if api_item.type == 'text' and api_item.text then

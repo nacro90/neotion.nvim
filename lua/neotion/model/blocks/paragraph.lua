@@ -93,24 +93,10 @@ function ParagraphBlock:serialize()
   result.paragraph = result.paragraph or {}
 
   if text_changed then
-    -- Text changed: create new plain text rich_text
-    -- (This loses formatting but preserves content - zero data loss for text)
-    result.paragraph.rich_text = {
-      {
-        type = 'text',
-        text = { content = self.text, link = nil },
-        plain_text = self.text,
-        href = nil,
-        annotations = {
-          bold = false,
-          italic = false,
-          strikethrough = false,
-          underline = false,
-          code = false,
-          color = 'default',
-        },
-      },
-    }
+    -- Text changed: parse markers to rich_text format
+    -- This converts **bold**, *italic*, [link](url), etc. to API format
+    local notion = require('neotion.format.notion')
+    result.paragraph.rich_text = notion.parse_to_api(self.text)
   else
     -- Text unchanged: preserve original rich_text (keeps formatting)
     result.paragraph.rich_text = self.rich_text

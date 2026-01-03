@@ -20,6 +20,7 @@
 ---@field log_level? string Log level: "trace", "debug", "info", "warn", "error" (default: "info")
 ---@field editing_mode? neotion.EditingMode Newline behavior: 'markdown' (double enter = new block) or 'notion' (enter = new block) (default: 'markdown')
 ---@field confirm_sync? neotion.ConfirmSync When to ask for sync confirmation: 'always', 'on_ambiguity', 'never' (default: 'on_ambiguity')
+---@field input? neotion.InputConfig Input system configuration (shortcuts and triggers)
 
 ---@class neotion.Icons
 ---@field synced? string Icon for synced blocks (default: "✓")
@@ -36,6 +37,22 @@
 ---@field goto_link? string|false Keymap for following link under cursor (default: "<leader>ng")
 ---@field search? string|false Keymap for search (default: "<leader>nf")
 
+---@class neotion.InputConfig
+---@field shortcuts? neotion.ShortcutsConfig Keyboard shortcuts configuration
+---@field triggers? neotion.TriggersConfig Trigger characters configuration (future / and @)
+
+---@class neotion.ShortcutsConfig
+---@field enabled? boolean Enable all shortcuts (default: true)
+---@field bold? boolean Enable bold shortcut (default: true)
+---@field italic? boolean Enable italic shortcut (default: true)
+---@field strikethrough? boolean Enable strikethrough shortcut (default: true)
+---@field code? boolean Enable code shortcut (default: true)
+---@field underline? boolean Enable underline shortcut (default: true)
+---@field color? boolean Enable color shortcut (default: true)
+
+---@class neotion.TriggersConfig
+---@field enabled? boolean Enable trigger characters (default: false, future / and @ support)
+
 -- Allow vim.g.neotion to be set before plugin loads
 ---@type neotion.Config|fun():neotion.Config|nil
 vim.g.neotion = vim.g.neotion
@@ -51,6 +68,7 @@ vim.g.neotion = vim.g.neotion
 ---@field log_level string
 ---@field editing_mode neotion.EditingMode
 ---@field confirm_sync neotion.ConfirmSync
+---@field input neotion.InternalInputConfig
 
 ---@class neotion.InternalIcons
 ---@field synced string
@@ -66,6 +84,22 @@ vim.g.neotion = vim.g.neotion
 ---@field goto_parent string|false
 ---@field goto_link string|false
 ---@field search string|false
+
+---@class neotion.InternalInputConfig
+---@field shortcuts neotion.InternalShortcutsConfig
+---@field triggers neotion.InternalTriggersConfig
+
+---@class neotion.InternalShortcutsConfig
+---@field enabled boolean
+---@field bold boolean
+---@field italic boolean
+---@field strikethrough boolean
+---@field code boolean
+---@field underline boolean
+---@field color boolean
+
+---@class neotion.InternalTriggersConfig
+---@field enabled boolean
 
 local M = {}
 
@@ -93,6 +127,20 @@ local default_config = {
   log_level = 'info',
   editing_mode = 'markdown', -- 'markdown' (double enter = new block) or 'notion' (enter = new block)
   confirm_sync = 'on_ambiguity', -- 'always', 'on_ambiguity', 'never'
+  input = {
+    shortcuts = {
+      enabled = true,
+      bold = true,
+      italic = true,
+      strikethrough = true,
+      code = true,
+      underline = true,
+      color = true,
+    },
+    triggers = {
+      enabled = false, -- Phase 8+: enable for / and @ support
+    },
+  },
 }
 
 ---@type neotion.InternalConfig
@@ -188,6 +236,47 @@ local function validate(opts)
     })
     if not keymaps_ok then
       return false, keymaps_err
+    end
+  end
+
+  -- Validate nested input table if provided
+  if opts.input then
+    local input_ok, input_err = pcall(vim.validate, {
+      ['input.shortcuts'] = { opts.input.shortcuts, { 'table', 'nil' }, 'table or nil' },
+      ['input.triggers'] = { opts.input.triggers, { 'table', 'nil' }, 'table or nil' },
+    })
+    if not input_ok then
+      return false, input_err
+    end
+
+    -- Validate shortcuts if provided
+    if opts.input.shortcuts then
+      local shortcuts_ok, shortcuts_err = pcall(vim.validate, {
+        ['input.shortcuts.enabled'] = { opts.input.shortcuts.enabled, { 'boolean', 'nil' }, 'boolean or nil' },
+        ['input.shortcuts.bold'] = { opts.input.shortcuts.bold, { 'boolean', 'nil' }, 'boolean or nil' },
+        ['input.shortcuts.italic'] = { opts.input.shortcuts.italic, { 'boolean', 'nil' }, 'boolean or nil' },
+        ['input.shortcuts.strikethrough'] = {
+          opts.input.shortcuts.strikethrough,
+          { 'boolean', 'nil' },
+          'boolean or nil',
+        },
+        ['input.shortcuts.code'] = { opts.input.shortcuts.code, { 'boolean', 'nil' }, 'boolean or nil' },
+        ['input.shortcuts.underline'] = { opts.input.shortcuts.underline, { 'boolean', 'nil' }, 'boolean or nil' },
+        ['input.shortcuts.color'] = { opts.input.shortcuts.color, { 'boolean', 'nil' }, 'boolean or nil' },
+      })
+      if not shortcuts_ok then
+        return false, shortcuts_err
+      end
+    end
+
+    -- Validate triggers if provided
+    if opts.input.triggers then
+      local triggers_ok, triggers_err = pcall(vim.validate, {
+        ['input.triggers.enabled'] = { opts.input.triggers.enabled, { 'boolean', 'nil' }, 'boolean or nil' },
+      })
+      if not triggers_ok then
+        return false, triggers_err
+      end
     end
   end
 

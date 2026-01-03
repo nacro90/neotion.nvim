@@ -3,6 +3,20 @@
 ---@field private version string
 local M = {}
 
+---Safely invoke a callback and log errors
+---@param callback function The callback to invoke
+---@param ... any Arguments to pass to the callback
+local function safe_callback(callback, ...)
+  local ok, err = pcall(callback, ...)
+  if not ok then
+    local log = require('neotion.log')
+    local logger = log.get_logger('api.client')
+    logger.error('Callback error', { error = err })
+    -- Re-raise so Neovim shows the error to the user
+    error(err)
+  end
+end
+
 ---@class neotion.api.Response
 ---@field status integer HTTP status code
 ---@field body table|nil Parsed JSON body
@@ -88,7 +102,7 @@ function M.request(endpoint, token, opts, callback)
   vim.system(cmd, { text = true }, function(result)
     vim.schedule(function()
       if result.code ~= 0 then
-        callback({
+        safe_callback(callback, {
           status = 0,
           body = nil,
           error = 'curl failed: ' .. (result.stderr or 'unknown error'),
@@ -110,7 +124,7 @@ function M.request(endpoint, token, opts, callback)
         if body and body.message then
           err_msg = err_msg .. ': ' .. body.message
         end
-        callback({
+        safe_callback(callback, {
           status = status_code,
           body = body,
           error = err_msg,
@@ -119,7 +133,7 @@ function M.request(endpoint, token, opts, callback)
       end
 
       if parse_err and status_code == 200 then
-        callback({
+        safe_callback(callback, {
           status = status_code,
           body = nil,
           error = parse_err,
@@ -127,7 +141,7 @@ function M.request(endpoint, token, opts, callback)
         return
       end
 
-      callback({
+      safe_callback(callback, {
         status = status_code,
         body = body,
         error = nil,

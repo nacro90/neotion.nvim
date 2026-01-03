@@ -257,6 +257,99 @@ describe('neotion.model.blocks.heading', function()
       assert.is_not_nil(serialized.heading_1)
       assert.is_nil(serialized.heading_3)
     end)
+
+    it('should parse markers when text changed with formatting', function()
+      local raw = {
+        id = 'test',
+        type = 'heading_1',
+        heading_1 = { rich_text = { { plain_text = 'Original' } } },
+      }
+      local block = heading_module.new(raw)
+
+      block.text = '**Bold Title**'
+
+      local serialized = block:serialize()
+
+      assert.are.equal(1, #serialized.heading_1.rich_text)
+      assert.are.equal('Bold Title', serialized.heading_1.rich_text[1].plain_text)
+      assert.is_true(serialized.heading_1.rich_text[1].annotations.bold)
+    end)
+
+    it('should parse mixed formatting markers', function()
+      local raw = {
+        id = 'test',
+        type = 'heading_2',
+        heading_2 = { rich_text = { { plain_text = 'Original' } } },
+      }
+      local block = heading_module.new(raw)
+
+      block.text = 'Hello **bold** and *italic*'
+
+      local serialized = block:serialize()
+
+      assert.are.equal(4, #serialized.heading_2.rich_text)
+      assert.are.equal('Hello ', serialized.heading_2.rich_text[1].plain_text)
+      assert.are.equal('bold', serialized.heading_2.rich_text[2].plain_text)
+      assert.is_true(serialized.heading_2.rich_text[2].annotations.bold)
+      assert.are.equal(' and ', serialized.heading_2.rich_text[3].plain_text)
+      assert.are.equal('italic', serialized.heading_2.rich_text[4].plain_text)
+      assert.is_true(serialized.heading_2.rich_text[4].annotations.italic)
+    end)
+
+    it('should parse link markers to href', function()
+      local raw = {
+        id = 'test',
+        type = 'heading_1',
+        heading_1 = { rich_text = { { plain_text = 'Original' } } },
+      }
+      local block = heading_module.new(raw)
+
+      block.text = '[click here](https://example.com)'
+
+      local serialized = block:serialize()
+
+      assert.are.equal(1, #serialized.heading_1.rich_text)
+      assert.are.equal('click here', serialized.heading_1.rich_text[1].plain_text)
+      assert.are.equal('https://example.com', serialized.heading_1.rich_text[1].href)
+    end)
+
+    it('should parse color markers', function()
+      local raw = {
+        id = 'test',
+        type = 'heading_3',
+        heading_3 = { rich_text = { { plain_text = 'Original' } } },
+      }
+      local block = heading_module.new(raw)
+
+      block.text = '<c:red>colored title</c>'
+
+      local serialized = block:serialize()
+
+      assert.are.equal(1, #serialized.heading_3.rich_text)
+      assert.are.equal('colored title', serialized.heading_3.rich_text[1].plain_text)
+      assert.are.equal('red', serialized.heading_3.rich_text[1].annotations.color)
+    end)
+
+    it('should create plain rich_text when text changed without markers', function()
+      local raw = {
+        id = 'test',
+        type = 'heading_1',
+        heading_1 = {
+          rich_text = {
+            { plain_text = 'Original', annotations = { bold = true } },
+          },
+        },
+      }
+      local block = heading_module.new(raw)
+
+      block.text = 'Plain new title'
+
+      local serialized = block:serialize()
+
+      assert.are.equal(1, #serialized.heading_1.rich_text)
+      assert.are.equal('Plain new title', serialized.heading_1.rich_text[1].plain_text)
+      assert.is_false(serialized.heading_1.rich_text[1].annotations.bold)
+    end)
   end)
 
   describe('update_from_lines', function()

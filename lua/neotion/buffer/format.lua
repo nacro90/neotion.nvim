@@ -5,20 +5,30 @@ local M = {}
 ---@class neotion.FormatOpts
 ---@field indent_size? integer Spaces per indent level (default: 2)
 
----Format a single block to plain text lines
+---Format a single block to text lines with inline formatting markers
 ---@param block neotion.api.Block
 ---@param indent integer Current indent level
 ---@param opts? neotion.FormatOpts
 ---@return string[]
 function M.format_block(block, indent, opts)
   local blocks_api = require('neotion.api.blocks')
+  local log = require('neotion.log').get_logger('buffer.format')
   opts = opts or {}
   local indent_size = opts.indent_size or 2
   local prefix = string.rep(' ', indent * indent_size)
   local lines = {}
 
   local block_type = block.type
-  local text = blocks_api.get_block_text(block)
+  -- Use formatted text with Notion syntax markers for rendering
+  local text = blocks_api.get_block_text_formatted(block)
+
+  -- DEBUG: Log the formatted text
+  log.debug('format_block called', {
+    block_type = block_type,
+    formatted_text = text,
+    plain_text = blocks_api.get_block_text(block),
+    has_rich_text = block[block_type] and block[block_type].rich_text ~= nil,
+  })
 
   if block_type == 'paragraph' then
     if text ~= '' then

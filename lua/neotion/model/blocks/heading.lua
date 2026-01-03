@@ -31,6 +31,14 @@ local function rich_text_to_plain(rich_text)
   return table.concat(parts)
 end
 
+---Convert rich_text to Notion syntax with formatting markers
+---@param rich_text table[]
+---@return string
+local function rich_text_to_notion_syntax(rich_text)
+  local blocks_api = require('neotion.api.blocks')
+  return blocks_api.rich_text_to_notion_syntax(rich_text)
+end
+
 ---Create a new HeadingBlock from Notion API JSON
 ---@param raw table Notion API block JSON
 ---@return neotion.HeadingBlock
@@ -54,7 +62,8 @@ function HeadingBlock.new(raw)
   -- Extract content from heading block
   local block_data = raw[raw.type] or {}
   self.rich_text = block_data.rich_text or {}
-  self.text = rich_text_to_plain(self.rich_text)
+  -- Use Notion syntax with formatting markers for display
+  self.text = rich_text_to_notion_syntax(self.rich_text)
   self.original_text = self.text
   self.editable = true -- Heading is fully supported
 
@@ -179,6 +188,23 @@ function HeadingBlock:matches_content(lines)
   local text = line:match('^#+%s*(.*)$') or line
 
   return text == self.text
+end
+
+---Get rich text segments from block's rich_text
+---Converts Notion API rich_text format to RichTextSegment array
+---@return neotion.RichTextSegment[]
+function HeadingBlock:get_rich_text_segments()
+  local rich_text_mod = require('neotion.model.rich_text')
+  return rich_text_mod.from_api(self.rich_text)
+end
+
+---Format block content with Notion syntax markers
+---Returns text with markers like **bold**, *italic*, <c:red>colored</c>
+---@return string
+function HeadingBlock:format_with_markers()
+  local segments = self:get_rich_text_segments()
+  local notion = require('neotion.format.notion')
+  return notion.render(segments)
 end
 
 -- Module interface for registry

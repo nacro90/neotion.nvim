@@ -69,6 +69,9 @@ function M.create(page_id)
   vim.api.nvim_create_autocmd('BufDelete', {
     buffer = bufnr,
     callback = function()
+      -- Detach render system
+      local render = require('neotion.render')
+      render.detach(bufnr)
       buffer_data[bufnr] = nil
     end,
   })
@@ -127,6 +130,10 @@ function M.set_content(bufnr, lines)
   -- Keep buffer writable for editing (read-only blocks protected by InsertEnter autocmd)
   vim.api.nvim_set_option_value('modifiable', true, { buf = bufnr })
   vim.api.nvim_set_option_value('modified', false, { buf = bufnr })
+
+  -- Attach render system for inline formatting
+  local render = require('neotion.render')
+  render.attach(bufnr)
 end
 
 ---Check if buffer is a neotion buffer

@@ -121,7 +121,31 @@ function M.rich_text_to_plain(rich_text)
   return table.concat(parts)
 end
 
----Get the text content of a block
+---Convert Notion API rich text array to Notion syntax (with formatting markers)
+---@param rich_text neotion.api.RichText[]
+---@return string
+function M.rich_text_to_notion_syntax(rich_text)
+  if not rich_text or type(rich_text) ~= 'table' then
+    return ''
+  end
+
+  local types = require('neotion.format.types')
+  local notion = require('neotion.format.notion')
+
+  -- Convert API rich text to RichTextSegment array
+  local segments = {}
+  local col = 0
+  for _, text in ipairs(rich_text) do
+    local segment = types.RichTextSegment.from_api(text, col)
+    table.insert(segments, segment)
+    col = segment.end_col
+  end
+
+  -- Render segments to Notion syntax
+  return notion.render(segments)
+end
+
+---Get the text content of a block (plain text without formatting)
 ---@param block neotion.api.Block
 ---@return string
 function M.get_block_text(block)
@@ -140,6 +164,34 @@ function M.get_block_text(block)
   end
 
   -- Special cases
+  if block.type == 'child_page' then
+    return block_data.title or ''
+  elseif block.type == 'child_database' then
+    return block_data.title or ''
+  end
+
+  return ''
+end
+
+---Get the text content of a block with Notion syntax formatting markers
+---@param block neotion.api.Block
+---@return string
+function M.get_block_text_formatted(block)
+  if not block or not block.type then
+    return ''
+  end
+
+  local block_data = block[block.type]
+  if not block_data then
+    return ''
+  end
+
+  -- Most block types have a rich_text field
+  if block_data.rich_text then
+    return M.rich_text_to_notion_syntax(block_data.rich_text)
+  end
+
+  -- Special cases - these don't have formatting
   if block.type == 'child_page' then
     return block_data.title or ''
   elseif block.type == 'child_database' then

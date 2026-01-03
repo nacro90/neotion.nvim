@@ -360,4 +360,240 @@ describe('neotion.model.blocks.paragraph', function()
       assert.is_function(paragraph_module.new)
     end)
   end)
+
+  describe('rich text integration', function()
+    local types
+
+    before_each(function()
+      types = require('neotion.format.types')
+    end)
+
+    describe('get_rich_text_segments', function()
+      it('should convert API rich_text to RichTextSegment array', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = {
+            rich_text = {
+              {
+                type = 'text',
+                plain_text = 'Hello ',
+                annotations = {
+                  bold = false,
+                  italic = false,
+                  strikethrough = false,
+                  underline = false,
+                  code = false,
+                  color = 'default',
+                },
+              },
+              {
+                type = 'text',
+                plain_text = 'world',
+                annotations = {
+                  bold = true,
+                  italic = false,
+                  strikethrough = false,
+                  underline = false,
+                  code = false,
+                  color = 'default',
+                },
+              },
+            },
+          },
+        }
+        local block = paragraph_module.new(raw)
+
+        local segments = block:get_rich_text_segments()
+
+        assert.are.equal(2, #segments)
+        assert.are.equal('Hello ', segments[1].text)
+        assert.is_false(segments[1].annotations.bold)
+        assert.are.equal('world', segments[2].text)
+        assert.is_true(segments[2].annotations.bold)
+      end)
+
+      it('should return empty array for empty rich_text', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = {} },
+        }
+        local block = paragraph_module.new(raw)
+
+        local segments = block:get_rich_text_segments()
+
+        assert.are.equal(0, #segments)
+      end)
+
+      it('should handle colored text', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = {
+            rich_text = {
+              {
+                plain_text = 'Red text',
+                annotations = {
+                  bold = false,
+                  italic = false,
+                  strikethrough = false,
+                  underline = false,
+                  code = false,
+                  color = 'red',
+                },
+              },
+            },
+          },
+        }
+        local block = paragraph_module.new(raw)
+
+        local segments = block:get_rich_text_segments()
+
+        assert.are.equal('red', segments[1].annotations.color)
+      end)
+
+      it('should calculate correct column positions', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = {
+            rich_text = {
+              { plain_text = 'AB', annotations = {} },
+              { plain_text = 'CD', annotations = {} },
+            },
+          },
+        }
+        local block = paragraph_module.new(raw)
+
+        local segments = block:get_rich_text_segments()
+
+        assert.are.equal(0, segments[1].start_col)
+        assert.are.equal(2, segments[1].end_col)
+        assert.are.equal(2, segments[2].start_col)
+        assert.are.equal(4, segments[2].end_col)
+      end)
+    end)
+
+    describe('format_with_markers', function()
+      it('should format plain text without markers', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = {
+            rich_text = {
+              {
+                plain_text = 'Hello world',
+                annotations = {
+                  bold = false,
+                  italic = false,
+                  strikethrough = false,
+                  underline = false,
+                  code = false,
+                  color = 'default',
+                },
+              },
+            },
+          },
+        }
+        local block = paragraph_module.new(raw)
+
+        local text = block:format_with_markers()
+
+        assert.are.equal('Hello world', text)
+      end)
+
+      it('should format bold text with ** markers', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = {
+            rich_text = {
+              {
+                plain_text = 'bold',
+                annotations = {
+                  bold = true,
+                  italic = false,
+                  strikethrough = false,
+                  underline = false,
+                  code = false,
+                  color = 'default',
+                },
+              },
+            },
+          },
+        }
+        local block = paragraph_module.new(raw)
+
+        local text = block:format_with_markers()
+
+        assert.are.equal('**bold**', text)
+      end)
+
+      it('should format mixed formatting', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = {
+            rich_text = {
+              {
+                plain_text = 'Hello ',
+                annotations = {
+                  bold = false,
+                  italic = false,
+                  strikethrough = false,
+                  underline = false,
+                  code = false,
+                  color = 'default',
+                },
+              },
+              {
+                plain_text = 'world',
+                annotations = {
+                  bold = true,
+                  italic = false,
+                  strikethrough = false,
+                  underline = false,
+                  code = false,
+                  color = 'default',
+                },
+              },
+            },
+          },
+        }
+        local block = paragraph_module.new(raw)
+
+        local text = block:format_with_markers()
+
+        assert.are.equal('Hello **world**', text)
+      end)
+
+      it('should format colored text with <c:color> markers', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = {
+            rich_text = {
+              {
+                plain_text = 'red text',
+                annotations = {
+                  bold = false,
+                  italic = false,
+                  strikethrough = false,
+                  underline = false,
+                  code = false,
+                  color = 'red',
+                },
+              },
+            },
+          },
+        }
+        local block = paragraph_module.new(raw)
+
+        local text = block:format_with_markers()
+
+        assert.are.equal('<c:red>red text</c>', text)
+      end)
+    end)
+  end)
 end)

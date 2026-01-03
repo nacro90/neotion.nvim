@@ -336,6 +336,77 @@ describe('neotion.buffer', function()
     end)
   end)
 
+  describe('render attachment', function()
+    local render
+
+    before_each(function()
+      package.loaded['neotion.render'] = nil
+      render = require('neotion.render')
+      render.reset()
+    end)
+
+    after_each(function()
+      render.reset()
+    end)
+
+    it('should attach render system when content is set', function()
+      local bufnr = buffer.create('test123')
+
+      buffer.set_content(bufnr, { 'Hello **world**' })
+
+      assert.is_true(render.is_attached(bufnr))
+    end)
+
+    it('should not attach render system when buffer is loading', function()
+      local bufnr = buffer.create('test123')
+      -- Buffer starts in loading state
+
+      assert.is_false(render.is_attached(bufnr))
+    end)
+
+    it('should detach render system when buffer is deleted', function()
+      local bufnr = buffer.create('test123')
+      buffer.set_content(bufnr, { 'Test content' })
+      assert.is_true(render.is_attached(bufnr))
+
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+
+      -- After deletion, buffer should be cleaned up from render system
+      assert.is_false(render.is_attached(bufnr))
+    end)
+
+    it('should render content with inline formatting', function()
+      local bufnr = buffer.create('test123')
+      local extmarks = require('neotion.render.extmarks')
+
+      buffer.set_content(bufnr, { 'Hello **world** there' })
+
+      -- Should have extmarks for bold formatting
+      local marks = extmarks.get_buffer_marks(bufnr)
+      assert.is_true(#marks > 0)
+    end)
+
+    it('should apply anti-conceal when attached', function()
+      local anti_conceal = require('neotion.render.anti_conceal')
+      anti_conceal.reset()
+
+      local bufnr = buffer.create('test123')
+      buffer.set_content(bufnr, { 'Hello **world**' })
+
+      assert.is_true(anti_conceal.is_attached(bufnr))
+    end)
+
+    it('should support disabling render via config', function()
+      render.set_enabled(false)
+      local bufnr = buffer.create('test_disabled')
+
+      buffer.set_content(bufnr, { 'Hello **world**' })
+
+      assert.is_false(render.is_attached(bufnr))
+      render.set_enabled(true) -- Reset
+    end)
+  end)
+
   describe('recent pages tracking', function()
     before_each(function()
       buffer.clear_recent()

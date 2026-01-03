@@ -756,6 +756,76 @@ describe('neotion.format.notion', function()
         assert.are.equal(0, result.conceal_regions[1].start_col)
         assert.are.equal(3, result.conceal_regions[1].end_col)
       end)
+
+      it('should correctly parse ***bolditalic*** without space', function()
+        local result = notion.parse_with_concealment('***bolditalic***')
+
+        assert.are.equal(1, #result.segments)
+        assert.are.equal('bolditalic', result.segments[1].text)
+        assert.is_true(result.segments[1].annotations.bold)
+        assert.is_true(result.segments[1].annotations.italic)
+      end)
+    end)
+
+    describe('mixed format edge cases', function()
+      it('should parse ***bold** italic* correctly', function()
+        -- This is bold+italic followed by italic: ***bold** rest*
+        local result = notion.parse_with_concealment('***bold** italic*')
+
+        -- Should have 2 segments:
+        -- 1. "bold" with bold+italic
+        -- 2. " italic" with italic only
+        assert.are.equal(2, #result.segments)
+        assert.are.equal('bold', result.segments[1].text)
+        assert.is_true(result.segments[1].annotations.bold)
+        assert.is_true(result.segments[1].annotations.italic)
+        assert.are.equal(' italic', result.segments[2].text)
+        assert.is_false(result.segments[2].annotations.bold)
+        assert.is_true(result.segments[2].annotations.italic)
+      end)
+
+      it('should not conceal regular text characters', function()
+        -- Bug: "kime *ital* kime **bold** belli degil" conceal etmemesi gereken 'k'yi conceal ediyor
+        local result = notion.parse_with_concealment('kime *ital* kime **bold** belli degil')
+
+        -- Should have 5 segments: "kime ", "ital", " kime ", "bold", " belli degil"
+        assert.are.equal(5, #result.segments)
+        assert.are.equal('kime ', result.segments[1].text)
+        assert.are.equal('ital', result.segments[2].text)
+        assert.are.equal(' kime ', result.segments[3].text)
+        assert.are.equal('bold', result.segments[4].text)
+        assert.are.equal(' belli degil', result.segments[5].text)
+
+        -- Verify conceal regions don't overlap with regular text
+        -- 'k' at position 0 should NOT be in any conceal region
+        for _, region in ipairs(result.conceal_regions) do
+          assert.is_true(
+            region.start_col > 0 or region.end_col == 0,
+            'Conceal region should not include the first character k'
+          )
+        end
+
+        -- First * is at position 5, first conceal should be there
+        local first_conceal = result.conceal_regions[1]
+        assert.are.equal(5, first_conceal.start_col, 'First conceal should start at position 5 (first *)')
+      end)
+
+      it('should correctly calculate segment positions with italic and bold in same line', function()
+        local result = notion.parse_with_concealment('a *b* c **d** e')
+
+        -- Segments: "a ", "b", " c ", "d", " e"
+        assert.are.equal(5, #result.segments)
+
+        -- Check that segments don't overlap and positions are correct
+        for i = 2, #result.segments do
+          local prev_end = result.segments[i - 1].end_col
+          local curr_start = result.segments[i].start_col
+          assert.is_true(
+            curr_start >= prev_end,
+            string.format('Segment %d start (%d) should be >= segment %d end (%d)', i, curr_start, i - 1, prev_end)
+          )
+        end
+      end)
     end)
   end)
 

@@ -122,6 +122,10 @@ function M.render_line(bufnr, line)
         extmarks.apply_highlight(bufnr, line, segment.start_col, segment.end_col, hl_group)
       end
     end
+    -- Apply link highlight if segment has href
+    if segment.href and segment.href ~= vim.NIL then
+      extmarks.apply_highlight(bufnr, line, segment.start_col, segment.end_col, 'NeotionLink')
+    end
   end
 
   -- Apply concealment only on non-cursor lines
@@ -201,6 +205,15 @@ function M.attach(bufnr)
       -- Only re-render current line in insert mode for performance
       local cursor = vim.api.nvim_win_get_cursor(0)
       M.render_line(bufnr, cursor[1] - 1)
+    end,
+  })
+
+  -- Re-render on leaving insert mode to ensure full render
+  vim.api.nvim_create_autocmd('InsertLeave', {
+    group = augroup,
+    buffer = bufnr,
+    callback = function()
+      M.refresh(bufnr)
     end,
   })
 

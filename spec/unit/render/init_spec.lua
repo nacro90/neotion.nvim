@@ -273,4 +273,105 @@ describe('neotion.render.init', function()
       assert.are.equal(original.enabled, config.enabled)
     end)
   end)
+
+  describe('link highlighting', function()
+    it('should apply NeotionLink highlight to links', function()
+      -- Create buffer with a link
+      local link_bufnr = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(link_bufnr, 0, -1, false, {
+        'Click [here](https://example.com) for info',
+      })
+      vim.api.nvim_set_current_buf(link_bufnr)
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+      render.attach(link_bufnr)
+
+      -- Get marks on line 0
+      local marks = extmarks.get_line_marks(link_bufnr, 0)
+
+      -- Find NeotionLink highlight
+      local has_link_highlight = false
+      for _, mark in ipairs(marks) do
+        local details = mark[4]
+        if details and details.hl_group and details.hl_group:match('Link') then
+          has_link_highlight = true
+          break
+        end
+      end
+
+      assert.is_true(has_link_highlight, 'Link should have NeotionLink highlight')
+
+      render.detach(link_bufnr)
+      vim.api.nvim_buf_delete(link_bufnr, { force = true })
+    end)
+
+    it('should highlight link text not URL', function()
+      local link_bufnr = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(link_bufnr, 0, -1, false, {
+        '[link](https://example.com)',
+      })
+      vim.api.nvim_set_current_buf(link_bufnr)
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+      render.attach(link_bufnr)
+
+      local marks = extmarks.get_line_marks(link_bufnr, 0)
+
+      -- Link text "link" is at columns 1-5 (0-indexed, after [)
+      -- Find highlight mark covering link text area
+      local link_highlighted = false
+      for _, mark in ipairs(marks) do
+        local details = mark[4]
+        if details and details.hl_group and details.hl_group:match('Link') then
+          -- Check if it covers the link text position
+          local start_col = mark[2]
+          if start_col >= 0 and start_col <= 5 then
+            link_highlighted = true
+            break
+          end
+        end
+      end
+
+      assert.is_true(link_highlighted, 'Link text should be highlighted')
+
+      render.detach(link_bufnr)
+      vim.api.nvim_buf_delete(link_bufnr, { force = true })
+    end)
+  end)
+
+  describe('InsertLeave autocmd', function()
+    it('should re-render buffer on InsertLeave', function()
+      vim.api.nvim_set_current_buf(bufnr)
+      render.attach(bufnr)
+
+      -- Clear marks to verify re-render
+      extmarks.clear_buffer(bufnr)
+      local marks_before = #extmarks.get_buffer_marks(bufnr)
+      assert.are.equal(0, marks_before)
+
+      -- Trigger InsertLeave autocmd manually
+      vim.api.nvim_exec_autocmds('InsertLeave', { buffer = bufnr })
+
+      -- Wait for any deferred callbacks
+      vim.wait(50, function()
+        return false
+      end)
+
+      -- Should have re-rendered
+      local marks_after = #extmarks.get_buffer_marks(bufnr)
+      assert.is_true(marks_after > 0)
+    end)
+
+    it('should not re-render if not attached', function()
+      -- Do not attach
+      extmarks.clear_buffer(bufnr)
+
+      -- Trigger InsertLeave autocmd manually
+      vim.api.nvim_exec_autocmds('InsertLeave', { buffer = bufnr })
+
+      -- Should have no marks
+      local marks = #extmarks.get_buffer_marks(bufnr)
+      assert.are.equal(0, marks)
+    end)
+  end)
 end)

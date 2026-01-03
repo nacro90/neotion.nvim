@@ -217,9 +217,14 @@ function M.goto_parent()
 end
 
 ---Follow link under cursor
+---Opens external links in browser, Notion pages in new buffer
 function M.goto_link()
-  -- TODO: Implement link following
-  vim.notify('[neotion] goto_link() not yet implemented', vim.log.levels.WARN)
+  local navigation = require('neotion.navigation')
+  navigation.goto_link_at_cursor({
+    open_page = function(page_id)
+      M.open(page_id)
+    end,
+  })
 end
 
 ---Search Notion pages

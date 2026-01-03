@@ -821,93 +821,147 @@ function M.parse_with_concealment(text)
     end
 
     -- Italic (*text*) - with support for *** ending (bold inside italic)
-    if not matched and state.text:sub(state.pos, state.pos + 1) ~= '**' then
-      -- Use smart search that skips ** pairs
-      local after_open = state.text:sub(state.pos + 1)
-      local content, close_rel_pos = find_italic_close(after_open)
+    -- Check if current char is '*' AND either:
+    --   1. Next char is not '*' (simple italic: *text*)
+    --   2. Next two chars are '**' (this is ***, not **: italic containing bold)
+    if not matched and state.text:sub(state.pos, state.pos) == '*' then
+      local next_one = state.text:sub(state.pos + 1, state.pos + 1)
+      local next_two = state.text:sub(state.pos + 1, state.pos + 2)
+      -- Skip if it's exactly ** (not ***) - will be handled by bold parser
+      local is_bold_not_bold_italic = (next_one == '*' and next_two ~= '**')
 
-      if content then
-        local marker_len = 1
-        local actual_close_pos = state.pos + close_rel_pos
-        local next_two = state.text:sub(actual_close_pos + 1, actual_close_pos + 2)
+      if not is_bold_not_bold_italic then
+        -- Use smart search that skips ** pairs
+        local after_open = state.text:sub(state.pos + 1)
+        local content, close_rel_pos = find_italic_close(after_open)
 
-        -- Check for *** ending with bold inside italic
-        if next_two == '**' and content:match('%*%*') then
-          -- Find the last ** in content that starts bold
-          local last_double_star_pos = nil
-          local i = 1
-          while i <= #content - 1 do
-            local char = content:sub(i, i)
-            if char == '\\' then
-              i = i + 2
-            elseif content:sub(i, i + 1) == '**' then
-              last_double_star_pos = i
-              i = i + 2
-            else
-              i = i + 1
+        if content then
+          local marker_len = 1
+          local actual_close_pos = state.pos + close_rel_pos
+          local closing_chars = state.text:sub(actual_close_pos + 1, actual_close_pos + 2)
+
+          -- Check for *** ending with bold inside italic
+          if closing_chars == '**' and content:match('%*%*') then
+            -- Find the last ** in content that starts bold
+            local last_double_star_pos = nil
+            local i = 1
+            while i <= #content - 1 do
+              local char = content:sub(i, i)
+              if char == '\\' then
+                i = i + 2
+              elseif content:sub(i, i + 1) == '**' then
+                last_double_star_pos = i
+                i = i + 2
+              else
+                i = i + 1
+              end
+            end
+
+            if last_double_star_pos then
+              local before_stars = content:sub(1, last_double_star_pos - 1)
+              local bold_part = content:sub(last_double_star_pos + 2)
+
+              -- Conceal opening *
+              add_conceal_region(state, start_original_col, start_original_col + marker_len)
+
+              -- Add italic-only part
+              if before_stars ~= '' then
+                local italic_ann = base_annotations:clone()
+                italic_ann.italic = true
+                local seg1 = types.RichTextSegment.new(before_stars, {
+                  annotations = italic_ann,
+                  start_col = start_original_col + marker_len,
+                })
+                seg1.end_col = start_original_col + marker_len + #before_stars
+                table.insert(state.segments, seg1)
+              end
+
+              -- Conceal the ** that starts bold
+              local bold_star_col = start_original_col + marker_len + #before_stars
+              add_conceal_region(state, bold_star_col, bold_star_col + 2)
+
+              -- Add bold+italic part
+              if bold_part ~= '' then
+                local bold_italic_ann = base_annotations:clone()
+                bold_italic_ann.bold = true
+                bold_italic_ann.italic = true
+                local seg2 = types.RichTextSegment.new(bold_part, {
+                  annotations = bold_italic_ann,
+                  start_col = bold_star_col + 2,
+                })
+                seg2.end_col = bold_star_col + 2 + #bold_part
+                table.insert(state.segments, seg2)
+              end
+
+              -- Conceal closing *** (includes the extra ** for bold)
+              local close_start = start_original_col + marker_len + #content
+              add_conceal_region(state, close_start, close_start + 3)
+              state.pos = actual_close_pos + 3
+              matched = true
             end
           end
 
-          if last_double_star_pos then
-            local before_stars = content:sub(1, last_double_star_pos - 1)
-            local bold_part = content:sub(last_double_star_pos + 2)
+          if not matched then
+            -- Check for ***bold** italic* pattern (bold+italic first, then italic only)
+            local bold_content, after_bold = content:match('^%*%*(.-)%*%*(.*)')
+            if bold_content then
+              -- Conceal opening * (italic)
+              add_conceal_region(state, start_original_col, start_original_col + marker_len)
 
-            -- Conceal opening *
-            add_conceal_region(state, start_original_col, start_original_col + marker_len)
+              -- Conceal ** (bold start)
+              local bold_start_col = start_original_col + marker_len
+              add_conceal_region(state, bold_start_col, bold_start_col + 2)
 
-            -- Add italic-only part
-            if before_stars ~= '' then
-              local italic_ann = base_annotations:clone()
-              italic_ann.italic = true
-              local seg1 = types.RichTextSegment.new(before_stars, {
-                annotations = italic_ann,
-                start_col = start_original_col + marker_len,
-              })
-              seg1.end_col = start_original_col + marker_len + #before_stars
-              table.insert(state.segments, seg1)
-            end
-
-            -- Conceal the ** that starts bold
-            local bold_star_col = start_original_col + marker_len + #before_stars
-            add_conceal_region(state, bold_star_col, bold_star_col + 2)
-
-            -- Add bold+italic part
-            if bold_part ~= '' then
+              -- Add bold+italic segment
               local bold_italic_ann = base_annotations:clone()
               bold_italic_ann.bold = true
               bold_italic_ann.italic = true
-              local seg2 = types.RichTextSegment.new(bold_part, {
+              local seg1 = types.RichTextSegment.new(bold_content, {
                 annotations = bold_italic_ann,
-                start_col = bold_star_col + 2,
+                start_col = bold_start_col + 2,
               })
-              seg2.end_col = bold_star_col + 2 + #bold_part
-              table.insert(state.segments, seg2)
-            end
+              seg1.end_col = bold_start_col + 2 + #bold_content
+              table.insert(state.segments, seg1)
 
-            -- Conceal closing *** (includes the extra ** for bold)
-            local close_start = start_original_col + marker_len + #content
-            add_conceal_region(state, close_start, close_start + 3)
-            state.pos = actual_close_pos + 3
+              -- Conceal ** (bold end)
+              add_conceal_region(state, seg1.end_col, seg1.end_col + 2)
+
+              -- Add italic-only segment (if there's content after)
+              if after_bold ~= '' then
+                local italic_ann = base_annotations:clone()
+                italic_ann.italic = true
+                local seg2 = types.RichTextSegment.new(after_bold, {
+                  annotations = italic_ann,
+                  start_col = seg1.end_col + 2,
+                })
+                seg2.end_col = seg1.end_col + 2 + #after_bold
+                table.insert(state.segments, seg2)
+                add_conceal_region(state, seg2.end_col, seg2.end_col + marker_len)
+              else
+                add_conceal_region(state, seg1.end_col + 2, seg1.end_col + 2 + marker_len)
+              end
+              state.pos = actual_close_pos + 1
+              matched = true
+            end
+          end
+
+          if not matched then
+            -- Regular italic processing (no nested bold)
+            add_conceal_region(state, start_original_col, start_original_col + marker_len)
+            local annotations = base_annotations:clone()
+            annotations.italic = true
+            local seg = types.RichTextSegment.new(content, {
+              annotations = annotations,
+              start_col = start_original_col + marker_len,
+            })
+            seg.end_col = start_original_col + marker_len + #content
+            table.insert(state.segments, seg)
+            add_conceal_region(state, seg.end_col, seg.end_col + marker_len)
+            state.pos = actual_close_pos + 1
             matched = true
           end
         end
-
-        if not matched then
-          -- Regular italic processing
-          add_conceal_region(state, start_original_col, start_original_col + marker_len)
-          local annotations = base_annotations:clone()
-          annotations.italic = true
-          local seg = types.RichTextSegment.new(content, {
-            annotations = annotations,
-            start_col = start_original_col + marker_len,
-          })
-          seg.end_col = start_original_col + marker_len + #content
-          table.insert(state.segments, seg)
-          add_conceal_region(state, seg.end_col, seg.end_col + marker_len)
-          state.pos = actual_close_pos + 1
-          matched = true
-        end
-      end
+      end -- close is_bold_not_bold_italic check
     end
 
     -- Strikethrough (~text~)

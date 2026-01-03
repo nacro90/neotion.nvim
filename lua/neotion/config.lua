@@ -43,6 +43,7 @@
 
 ---@class neotion.ShortcutsConfig
 ---@field enabled? boolean Enable all shortcuts (default: true)
+---@field default_keymaps? boolean Enable default keymaps like <C-b>, <C-i> (default: false)
 ---@field bold? boolean Enable bold shortcut (default: true)
 ---@field italic? boolean Enable italic shortcut (default: true)
 ---@field strikethrough? boolean Enable strikethrough shortcut (default: true)
@@ -91,6 +92,7 @@ vim.g.neotion = vim.g.neotion
 
 ---@class neotion.InternalShortcutsConfig
 ---@field enabled boolean
+---@field default_keymaps boolean
 ---@field bold boolean
 ---@field italic boolean
 ---@field strikethrough boolean
@@ -130,6 +132,7 @@ local default_config = {
   input = {
     shortcuts = {
       enabled = true,
+      default_keymaps = false, -- Enable default keymaps (<C-b>, <C-i>, etc.)
       bold = true,
       italic = true,
       strikethrough = true,

@@ -64,6 +64,25 @@ function M.create(bufnr)
   log.debug('Syncing buffer content to blocks')
   model.sync_blocks_from_buffer(bufnr)
 
+  -- Check for deleted blocks (line_range is nil)
+  local all_blocks = model.get_blocks(bufnr)
+  for _, block in ipairs(all_blocks) do
+    local start_line, end_line = block:get_line_range()
+    if start_line == nil or end_line == nil then
+      -- Block was deleted from buffer
+      local block_id = block:get_id()
+      log.info('Block deleted from buffer', {
+        block_id = block_id,
+        block_type = block:get_type(),
+      })
+      table.insert(plan.deletes, {
+        block_id = block_id,
+        block = block,
+        original_content = block:get_text() or '',
+      })
+    end
+  end
+
   -- Get dirty blocks (changed content)
   local dirty_blocks = model.get_dirty_blocks(bufnr)
   log.debug('Found dirty blocks', { count = #dirty_blocks })

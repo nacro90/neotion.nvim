@@ -17,12 +17,14 @@ local type_to_module = {
   heading_1 = 'heading',
   heading_2 = 'heading',
   heading_3 = 'heading',
-  -- Phase 5+ (commented out until implemented)
-  -- bulleted_list_item = 'bulleted_list',
+  -- Phase 5.7: Basic block types
+  divider = 'divider',
+  quote = 'quote',
+  bulleted_list_item = 'bulleted_list',
+  code = 'code',
+  -- Phase 9+
   -- numbered_list_item = 'numbered_list',
   -- to_do = 'todo',
-  -- quote = 'quote',
-  -- code = 'code',
   -- toggle = 'toggle',
   -- callout = 'callout',
 }

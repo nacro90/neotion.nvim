@@ -37,6 +37,32 @@ local debounce_timers = {}
 --- Global enabled state
 local enabled = true
 
+--- Global augroup for WinResized handling
+local global_augroup = nil
+
+--- Setup global WinResized autocmd for refreshing dividers on resize
+---@diagnostic disable-next-line: unused-local
+local function setup_win_resized_autocmd()
+  if global_augroup then
+    return -- Already setup
+  end
+
+  global_augroup = vim.api.nvim_create_augroup('NeotionRenderGlobal', { clear = true })
+
+  vim.api.nvim_create_autocmd('WinResized', {
+    group = global_augroup,
+    callback = function()
+      -- Refresh all attached buffers when window is resized
+      -- This ensures dividers and other full-width elements update
+      for bufnr, _ in pairs(attached_buffers) do
+        if vim.api.nvim_buf_is_valid(bufnr) then
+          M.refresh(bufnr)
+        end
+      end
+    end,
+  })
+end
+
 --- Get debounce delay from main config
 ---@return integer
 local function get_debounce_ms()
@@ -130,14 +156,49 @@ function M.render_line(bufnr, line)
     return
   end
 
-  -- Parse the line (with concealment info)
-  local result = parse_line(bufnr, line)
-
   -- Clear existing marks first
   extmarks.clear_line(bufnr, line)
 
   -- Check if this is the cursor line
   local is_cursor_line = anti_conceal.should_show_raw(bufnr, line)
+
+  -- Try block-level rendering first
+  local mapping = require('neotion.model.mapping')
+  -- Note: render_line receives 0-indexed line, but get_block_at_line expects 1-indexed
+  local block = mapping.get_block_at_line(bufnr, line + 1)
+
+  if block then
+    -- Create RenderContext for block
+    local RenderContext = require('neotion.render.context').RenderContext
+    local win = vim.fn.bufwinid(bufnr)
+    local window_width = 80
+    local text_width = 80
+
+    if win ~= -1 then
+      local win_info = vim.fn.getwininfo(win)[1]
+      if win_info then
+        window_width = win_info.width
+        text_width = win_info.width - (win_info.textoff or 0)
+      end
+    end
+
+    local block_start, block_end = block:get_line_range()
+    local ctx = RenderContext.new(bufnr, line, {
+      is_cursor_line = is_cursor_line,
+      window_width = window_width,
+      text_width = text_width,
+      block_start_line = block_start,
+      block_end_line = block_end,
+    })
+
+    -- Let block handle rendering if it wants to
+    if block:render(ctx) then
+      return -- Block handled its own rendering
+    end
+  end
+
+  -- Default text-based rendering
+  local result = parse_line(bufnr, line)
 
   -- Apply highlights for all segments
   for _, segment in ipairs(result.segments) do
@@ -181,6 +242,13 @@ function M.refresh(bufnr)
     return
   end
 
+  -- Refresh block line ranges before rendering
+  -- This ensures blocks are mapped to correct lines after edits
+  local mapping = require('neotion.model.mapping')
+  if mapping.has_blocks(bufnr) then
+    mapping.refresh_line_ranges(bufnr)
+  end
+
   extmarks.clear_buffer(bufnr)
   M.render_buffer(bufnr)
 end
@@ -197,6 +265,9 @@ function M.attach(bufnr)
   end
 
   attached_buffers[bufnr] = true
+
+  -- Setup global autocmds (once)
+  setup_win_resized_autocmd()
 
   -- Setup highlights
   highlight.setup()

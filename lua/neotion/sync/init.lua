@@ -192,11 +192,25 @@ function M.execute(bufnr, plan, callback)
     check_done()
   end
 
-  -- Execute deletes (not implemented in Phase 4)
+  -- Execute deletes
   for _, delete in ipairs(plan.deletes) do
-    -- TODO: Implement block deletion in Phase 4.5
-    table.insert(errors, 'Block deletion not yet implemented')
-    check_done()
+    log.info('Executing delete', {
+      block_id = delete.block_id,
+      original_content = (delete.original_content or ''):sub(1, 50),
+    })
+
+    blocks_api.delete(delete.block_id, function(result)
+      if result.error then
+        log.error('Delete failed', {
+          block_id = delete.block_id,
+          error = result.error,
+        })
+        table.insert(errors, 'Delete failed for block ' .. delete.block_id:sub(1, 8) .. ': ' .. result.error)
+      else
+        log.info('Delete succeeded', { block_id = delete.block_id })
+      end
+      check_done()
+    end)
   end
 end
 

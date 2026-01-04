@@ -38,16 +38,20 @@ function M.show_unmatched_dialog(unmatched, callback)
     return item.label
   end, items)
 
-  vim.ui.select(labels, {
-    prompt = 'Unmatched content: "' .. unmatched.content:sub(1, 40) .. '..."',
-  }, function(choice, idx)
-    if not choice or not idx then
-      callback('skip')
-      return
-    end
+  -- Use vim.schedule to ensure vim.ui.select runs in the right context
+  -- This prevents frozen dialogs when called from BufWriteCmd
+  vim.schedule(function()
+    vim.ui.select(labels, {
+      prompt = 'Unmatched content: "' .. unmatched.content:sub(1, 40) .. '..."',
+    }, function(choice, idx)
+      if not choice or not idx then
+        callback('skip')
+        return
+      end
 
-    local selected = items[idx]
-    callback(selected.action, selected.block)
+      local selected = items[idx]
+      callback(selected.action, selected.block)
+    end)
   end)
 end
 
@@ -61,10 +65,14 @@ function M.show_sync_confirmation(plan, callback)
   -- Build confirmation message
   local msg = 'Neotion: Sync Plan\n' .. table.concat(summary, '\n') .. '\n\nProceed with sync?'
 
-  vim.ui.select({ 'Yes, sync now', 'No, cancel' }, {
-    prompt = msg,
-  }, function(choice)
-    callback(choice == 'Yes, sync now')
+  -- Use vim.schedule to ensure vim.ui.select runs in the right context
+  -- This prevents frozen dialogs when called from BufWriteCmd
+  vim.schedule(function()
+    vim.ui.select({ 'Yes, sync now', 'No, cancel' }, {
+      prompt = msg,
+    }, function(choice)
+      callback(choice == 'Yes, sync now')
+    end)
   end)
 end
 

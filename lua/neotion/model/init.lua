@@ -79,44 +79,44 @@ function M.sync_blocks_from_buffer(bufnr)
 
   log.debug('sync_blocks_from_buffer called', { bufnr = bufnr })
 
-  -- Refresh line ranges from extmarks
+  -- Refresh line ranges - this also detects deleted blocks
   mapping.refresh_line_ranges(bufnr)
 
   local blocks = mapping.get_blocks(bufnr)
   log.debug('Total blocks in buffer', { count = #blocks })
 
   for i, block in ipairs(blocks) do
-    if block:is_editable() then
-      local start_line, end_line = block:get_line_range()
-      if start_line and end_line then
-        local lines = vim.api.nvim_buf_get_lines(bufnr, start_line - 1, end_line, false)
+    local start_line, end_line = block:get_line_range()
 
-        local was_dirty = block:is_dirty()
-        local old_text = block:get_text()
+    -- Skip blocks with nil line range (deleted from buffer)
+    if not start_line or not end_line then
+      log.debug('Block skipped (deleted from buffer)', {
+        index = i,
+        block_id = block:get_id(),
+        block_type = block:get_type(),
+      })
+    elseif block:is_editable() then
+      local lines = vim.api.nvim_buf_get_lines(bufnr, start_line - 1, end_line, false)
 
-        block:update_from_lines(lines)
+      local was_dirty = block:is_dirty()
+      local old_text = block:get_text()
 
-        local is_dirty_now = block:is_dirty()
-        local new_text = block:get_text()
+      block:update_from_lines(lines)
 
-        if is_dirty_now and not was_dirty then
-          log.debug('Block became dirty', {
-            index = i,
-            block_id = block:get_id(),
-            block_type = block:get_type(),
-            old_text_preview = old_text:sub(1, 30),
-            new_text_preview = new_text:sub(1, 30),
-            line_range = { start_line, end_line },
-          })
-        elseif is_dirty_now then
-          log.debug('Block is dirty', {
-            index = i,
-            block_id = block:get_id(),
-            block_type = block:get_type(),
-          })
-        end
-      else
-        log.warn('Block has no line range', {
+      local is_dirty_now = block:is_dirty()
+      local new_text = block:get_text()
+
+      if is_dirty_now and not was_dirty then
+        log.debug('Block became dirty', {
+          index = i,
+          block_id = block:get_id(),
+          block_type = block:get_type(),
+          old_text_preview = old_text:sub(1, 30),
+          new_text_preview = new_text:sub(1, 30),
+          line_range = { start_line, end_line },
+        })
+      elseif is_dirty_now then
+        log.debug('Block is dirty', {
           index = i,
           block_id = block:get_id(),
           block_type = block:get_type(),

@@ -390,4 +390,317 @@ describe('neotion.model.mapping', function()
       assert.are_not.equal(main_ns, readonly_ns)
     end)
   end)
+
+  describe('refresh_line_ranges with deletion detection', function()
+    -- Helper to create typed mock block with proper format method
+    local function create_typed_block(id, block_type, content)
+      local block = {
+        id = id,
+        type = block_type,
+        content = content or '',
+        editable = block_type ~= 'divider' and block_type ~= 'toggle',
+        dirty = false,
+        line_start = nil,
+        line_end = nil,
+        get_id = function(self)
+          return self.id
+        end,
+        get_type = function(self)
+          return self.type
+        end,
+        is_editable = function(self)
+          return self.editable
+        end,
+        is_dirty = function(self)
+          return self.dirty
+        end,
+        set_dirty = function(self, value)
+          self.dirty = value
+        end,
+        set_line_range = function(self, start_line, end_line)
+          self.line_start = start_line
+          self.line_end = end_line
+        end,
+        get_line_range = function(self)
+          return self.line_start, self.line_end
+        end,
+        contains_line = function(self, line)
+          if not self.line_start or not self.line_end then
+            return false
+          end
+          return line >= self.line_start and line <= self.line_end
+        end,
+        format = function(self)
+          if self.type == 'divider' then
+            return { '---' }
+          elseif self.type == 'heading_1' then
+            return { '# ' .. (self.content or '') }
+          elseif self.type == 'heading_2' then
+            return { '## ' .. (self.content or '') }
+          elseif self.type == 'heading_3' then
+            return { '### ' .. (self.content or '') }
+          elseif self.type == 'paragraph' then
+            return { self.content or '' }
+          elseif self.type == 'quote' then
+            return { '| ' .. (self.content or '') }
+          elseif self.type == 'bulleted_list_item' then
+            return { '- ' .. (self.content or '') }
+          elseif self.type == 'code' then
+            return { '```lua', self.content or '', '```' }
+          else
+            return { self.content or '' }
+          end
+        end,
+      }
+      return block
+    end
+
+    it('should update line ranges from extmark positions', function()
+      -- Setup: paragraph, divider, paragraph
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'First paragraph'),
+        create_typed_block('div1', 'divider'),
+        create_typed_block('para2', 'paragraph', 'Second paragraph'),
+      }
+
+      -- Set initial buffer content
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'First paragraph',
+        '---',
+        'Second paragraph',
+      })
+
+      mapping.setup(bufnr, blocks)
+      -- Setup extmarks (header_lines = 0)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- Verify initial line ranges
+      local start1, end1 = blocks[1]:get_line_range()
+      assert.are.equal(1, start1)
+      assert.are.equal(1, end1)
+
+      local start2, end2 = blocks[2]:get_line_range()
+      assert.are.equal(2, start2)
+      assert.are.equal(2, end2)
+
+      local start3, end3 = blocks[3]:get_line_range()
+      assert.are.equal(3, start3)
+      assert.are.equal(3, end3)
+
+      -- Simulate user editing: delete the divider line (line 2)
+      vim.api.nvim_buf_set_lines(bufnr, 1, 2, false, {})
+
+      -- Refresh line ranges from extmarks
+      mapping.refresh_line_ranges(bufnr)
+
+      -- Check results - extmarks should have tracked the deletion
+      start1, end1 = blocks[1]:get_line_range()
+      start2, end2 = blocks[2]:get_line_range()
+      start3, end3 = blocks[3]:get_line_range()
+
+      -- First paragraph should still be at line 1
+      assert.are.equal(1, start1)
+      assert.are.equal(1, end1)
+
+      -- Divider's extmark should have collapsed or moved
+      -- The exact behavior depends on extmark gravity settings
+      -- With end_right_gravity = false, the extmark may collapse
+
+      -- Second paragraph should now be at line 2 (moved up)
+      assert.are.equal(2, start3)
+      assert.are.equal(2, end3)
+    end)
+
+    it('should track heading block position after edit', function()
+      local blocks = {
+        create_typed_block('h1', 'heading_1', 'Title'),
+        create_typed_block('para1', 'paragraph', 'Content'),
+      }
+
+      -- Set initial content
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        '# Title',
+        'Content',
+      })
+
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- Verify initial state
+      local start1, end1 = blocks[1]:get_line_range()
+      assert.are.equal(1, start1)
+      assert.are.equal(1, end1)
+
+      local start2, end2 = blocks[2]:get_line_range()
+      assert.are.equal(2, start2)
+      assert.are.equal(2, end2)
+
+      -- Delete the heading line
+      vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, {})
+
+      mapping.refresh_line_ranges(bufnr)
+
+      start1, end1 = blocks[1]:get_line_range()
+      start2, end2 = blocks[2]:get_line_range()
+
+      -- Paragraph should now be at line 1
+      assert.are.equal(1, start2)
+      assert.are.equal(1, end2)
+    end)
+
+    it('should maintain correct ranges when all blocks present', function()
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'First'),
+        create_typed_block('div1', 'divider'),
+        create_typed_block('para2', 'paragraph', 'Second'),
+      }
+
+      -- All blocks present
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'First',
+        '---',
+        'Second',
+      })
+
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- Refresh should maintain correct ranges
+      mapping.refresh_line_ranges(bufnr)
+
+      local start1, end1 = blocks[1]:get_line_range()
+      local start2, end2 = blocks[2]:get_line_range()
+      local start3, end3 = blocks[3]:get_line_range()
+
+      -- All should have valid ranges
+      assert.are.equal(1, start1)
+      assert.are.equal(1, end1)
+      assert.are.equal(2, start2)
+      assert.are.equal(2, end2)
+      assert.are.equal(3, start3)
+      assert.are.equal(3, end3)
+    end)
+
+    it('should mark divider as deleted when line content is not ---', function()
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'First'),
+        create_typed_block('div1', 'divider'),
+        create_typed_block('para2', 'paragraph', 'Second'),
+      }
+
+      -- Initial content with divider
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'First',
+        '---',
+        'Second',
+      })
+
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- Delete the divider line using dd simulation
+      vim.api.nvim_buf_set_lines(bufnr, 1, 2, false, {})
+
+      -- Refresh line ranges
+      mapping.refresh_line_ranges(bufnr)
+
+      -- Divider should have nil line range (marked as deleted)
+      local div_start, div_end = blocks[2]:get_line_range()
+      assert.is_nil(div_start)
+      assert.is_nil(div_end)
+
+      -- Other blocks should have valid ranges
+      local start1, end1 = blocks[1]:get_line_range()
+      local start3, end3 = blocks[3]:get_line_range()
+
+      assert.are.equal(1, start1)
+      assert.are.equal(1, end1)
+      assert.are.equal(2, start3)
+      assert.are.equal(2, end3)
+    end)
+
+    it('should not mark empty paragraphs as deleted when originally empty', function()
+      -- Helper to create block with original_text tracking
+      local function create_block_with_original(id, block_type, content)
+        local block = create_typed_block(id, block_type, content)
+        block.original_text = content or ''
+        block.get_text = function(self)
+          return self.content or ''
+        end
+        return block
+      end
+
+      local blocks = {
+        create_block_with_original('para1', 'paragraph', 'Content'),
+        create_block_with_original('para2', 'paragraph', ''), -- Empty paragraph
+        create_block_with_original('para3', 'paragraph', 'More content'),
+      }
+
+      -- Buffer with empty line for empty paragraph
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'Content',
+        '',
+        'More content',
+      })
+
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- Refresh - empty paragraph should NOT be marked as deleted
+      mapping.refresh_line_ranges(bufnr)
+
+      local start1, end1 = blocks[1]:get_line_range()
+      local start2, end2 = blocks[2]:get_line_range()
+      local start3, end3 = blocks[3]:get_line_range()
+
+      -- All should have valid ranges (including empty paragraph)
+      assert.are.equal(1, start1)
+      assert.are.equal(1, end1)
+      assert.are.equal(2, start2) -- Empty paragraph still has valid range
+      assert.are.equal(2, end2)
+      assert.are.equal(3, start3)
+      assert.are.equal(3, end3)
+    end)
+
+    it('should detect divider deletion when extmarks overlap on same row', function()
+      -- This tests the specific bug where divider and paragraph end up on same row
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'Before'),
+        create_typed_block('div1', 'divider'),
+        create_typed_block('para2', 'paragraph', 'After'),
+      }
+
+      -- Initial content
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'Before',
+        '---',
+        'After',
+      })
+
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- Verify initial state
+      local div_start_before, div_end_before = blocks[2]:get_line_range()
+      assert.are.equal(2, div_start_before)
+
+      -- Delete divider line - this causes extmarks to collapse
+      vim.api.nvim_buf_set_lines(bufnr, 1, 2, false, {})
+
+      -- Now buffer is: "Before", "After" (2 lines)
+      -- Both divider and para2 extmarks may point to row 1 (0-indexed)
+
+      mapping.refresh_line_ranges(bufnr)
+
+      -- Divider should be marked as deleted (line content is 'After', not '---')
+      local div_start, div_end = blocks[2]:get_line_range()
+      assert.is_nil(div_start, 'Divider should have nil start line after deletion')
+      assert.is_nil(div_end, 'Divider should have nil end line after deletion')
+
+      -- Para2 should have valid range at line 2
+      local para2_start, para2_end = blocks[3]:get_line_range()
+      assert.are.equal(2, para2_start)
+      assert.are.equal(2, para2_end)
+    end)
+  end)
 end)

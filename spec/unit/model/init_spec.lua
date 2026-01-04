@@ -95,7 +95,7 @@ describe('neotion.model', function()
 
     it('should return false for unsupported types', function()
       assert.is_false(model.is_supported('toggle'))
-      assert.is_false(model.is_supported('code'))
+      assert.is_false(model.is_supported('numbered_list_item'))
       assert.is_false(model.is_supported('image'))
     end)
   end)

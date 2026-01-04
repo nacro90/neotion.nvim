@@ -69,6 +69,9 @@ M.GROUPS = {
   NeotionH2 = { link = '@markup.heading.2.markdown' },
   NeotionH3 = { link = '@markup.heading.3.markdown' },
 
+  -- Block types
+  NeotionDivider = { link = 'Comment' },
+
   -- Read-only indicator
   NeotionReadOnly = { link = 'Comment' },
 

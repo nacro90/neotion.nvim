@@ -3,14 +3,29 @@
 
 local buffer_helper = require('spec.helpers.buffer')
 
+-- Store mock to prevent browser opening during tests
+-- This mock is set globally and NEVER calls the real vim.ui.open
+local mock_ui_open = function(url)
+  vim.g._test_last_opened_url = url
+end
+
+-- Set mock immediately at load time to prevent any browser opening
+vim.ui.open = mock_ui_open
+
 describe('navigation', function()
   local navigation
 
   before_each(function()
+    -- Ensure vim.ui.open is always mocked before each test
+    vim.ui.open = mock_ui_open
+    vim.g._test_last_opened_url = nil -- Reset tracked URL
     navigation = require('neotion.navigation')
   end)
 
   after_each(function()
+    -- Always restore mock after each test
+    vim.ui.open = mock_ui_open
+
     -- Clean up any test buffers
     for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
       if vim.api.nvim_buf_is_valid(bufnr) then
@@ -284,11 +299,8 @@ describe('navigation', function()
 
   describe('goto_link', function()
     it('should call vim.ui.open for external links', function()
-      local called_with = nil
-      local original_ui_open = vim.ui.open
-      vim.ui.open = function(url)
-        called_with = url
-      end
+      -- vim.ui.open is mocked in minimal_init.lua - it stores URL in vim.g._test_last_opened_url
+      vim.g._test_last_opened_url = nil
 
       local link = {
         text = 'Example',
@@ -300,9 +312,7 @@ describe('navigation', function()
 
       navigation.goto_link(link)
 
-      assert.are.equal('https://example.com', called_with)
-
-      vim.ui.open = original_ui_open
+      assert.are.equal('https://example.com', vim.g._test_last_opened_url)
     end)
 
     it('should call open_page callback for notion_page links', function()
@@ -325,10 +335,8 @@ describe('navigation', function()
       assert.are.equal('abc123def456', called_with)
     end)
 
-    it('should not error when vim.ui.open is nil', function()
-      local original_ui_open = vim.ui.open
-      vim.ui.open = nil
-
+    it('should not error when vim.ui.open returns nil', function()
+      -- vim.ui.open is mocked and returns nil, simulating a failed open
       local link = {
         text = 'Example',
         url = 'https://example.com',
@@ -340,8 +348,6 @@ describe('navigation', function()
       assert.has_no_error(function()
         navigation.goto_link(link)
       end)
-
-      vim.ui.open = original_ui_open
     end)
   end)
 

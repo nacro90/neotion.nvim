@@ -256,6 +256,54 @@ describe('neotion.render.init', function()
     end)
   end)
 
+  describe('block rendering', function()
+    it('should apply divider overlay when block is at line', function()
+      -- Create buffer with divider content
+      local divider_bufnr = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(divider_bufnr, 0, -1, false, {
+        '---',
+      })
+
+      -- Setup block mapping with a divider block
+      local mapping = require('neotion.model.mapping')
+      local divider_module = require('neotion.model.blocks.divider')
+
+      local divider_block = divider_module.new({
+        id = 'test-divider',
+        type = 'divider',
+        divider = {},
+      })
+      divider_block:set_line_range(1, 1) -- Line 1 (1-indexed)
+
+      mapping.setup(divider_bufnr, { divider_block })
+
+      -- Attach renderer
+      vim.api.nvim_set_current_buf(divider_bufnr)
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+      render.attach(divider_bufnr)
+
+      -- Get marks on line 0 (0-indexed)
+      local marks = extmarks.get_line_marks(divider_bufnr, 0)
+
+      -- Should have overlay virtual text from divider block render
+      local has_overlay = false
+      for _, mark in ipairs(marks) do
+        local details = mark[4]
+        if details and details.virt_text then
+          has_overlay = true
+          break
+        end
+      end
+
+      assert.is_true(has_overlay, 'Divider should have overlay virtual text applied')
+
+      -- Cleanup
+      render.detach(divider_bufnr)
+      mapping.clear(divider_bufnr)
+      vim.api.nvim_buf_delete(divider_bufnr, { force = true })
+    end)
+  end)
+
   describe('set_config', function()
     it('should update render config', function()
       render.set_config({ anti_conceal = false })

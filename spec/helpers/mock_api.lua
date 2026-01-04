@@ -194,6 +194,49 @@ function M.quote(id, text)
   }
 end
 
+---Create a mock divider block
+---@param id string
+---@return table
+function M.divider(id)
+  return {
+    id = id,
+    type = 'divider',
+    has_children = false,
+    divider = {},
+  }
+end
+
+---Create a mock bulleted list item block
+---@param id string
+---@param text string
+---@return table
+function M.bulleted_list_item(id, text)
+  return {
+    id = id,
+    type = 'bulleted_list_item',
+    has_children = false,
+    bulleted_list_item = {
+      rich_text = {
+        {
+          type = 'text',
+          text = { content = text, link = nil },
+          plain_text = text,
+          href = nil,
+          annotations = {
+            bold = false,
+            italic = false,
+            strikethrough = false,
+            underline = false,
+            code = false,
+            color = 'default',
+          },
+        },
+      },
+      color = 'default',
+    },
+  }
+end
+
 ---Create a mock page with standard structure
 ---@param id string
 ---@param title string

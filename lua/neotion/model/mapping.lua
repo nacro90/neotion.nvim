@@ -161,32 +161,212 @@ function M.get_editable_blocks(bufnr)
   return editable
 end
 
----Refresh line ranges based on block order and format
----Note: We don't rely on extmarks for position tracking because they can shift
----unexpectedly during buffer edits. Instead, we calculate positions from:
---- 1. The stored header line count
---- 2. Each block's formatted line count
+---Refresh line ranges based on extmark positions
+---Uses extmarks to track block positions accurately even after edits
 ---@param bufnr integer
 function M.refresh_line_ranges(bufnr)
+  local log = require('neotion.log').get_logger('mapping')
   local blocks = buffer_blocks[bufnr]
-  if not blocks then
+  local extmarks = block_extmarks[bufnr]
+
+  if not blocks or not extmarks then
     return
   end
 
-  -- Get header line count from buffer data
-  local buffer = require('neotion.buffer')
-  local data = buffer.get_data(bufnr)
-  local header_lines = data and data.header_line_count or 0
+  log.debug('refresh_line_ranges starting', {
+    block_count = #blocks,
+    extmark_count = vim.tbl_count(extmarks),
+  })
 
-  -- Recalculate line ranges based on block order
-  local current_line = header_lines + 1
+  -- Get total line count to validate positions
+  local total_lines = vim.api.nvim_buf_line_count(bufnr)
 
-  for _, block in ipairs(blocks) do
-    local block_lines = block:format({})
-    local line_count = #block_lines
+  -- First pass: collect extmark info for all blocks
+  ---@type table<integer, {start_row: integer, end_row: integer, start_col: integer, end_col: integer, is_zero_width: boolean}>
+  local extmark_info = {}
 
-    block:set_line_range(current_line, current_line + line_count - 1)
-    current_line = current_line + line_count
+  for i, _ in ipairs(blocks) do
+    local extmark_id = extmarks[i]
+    if extmark_id then
+      local mark = vim.api.nvim_buf_get_extmark_by_id(bufnr, ns_id, extmark_id, { details = true })
+
+      if mark and #mark >= 3 then
+        local start_row = mark[1]
+        local details = mark[3]
+        local end_row = details and details.end_row or start_row
+        local start_col = mark[2]
+        local end_col = details and details.end_col or 0
+
+        extmark_info[i] = {
+          start_row = start_row,
+          end_row = end_row,
+          start_col = start_col,
+          end_col = end_col,
+          is_zero_width = (start_row == end_row) and (start_col == end_col),
+        }
+      end
+    end
+  end
+
+  -- Second pass: determine which blocks are deleted vs valid
+  -- A block is deleted if:
+  -- 1. Its extmark is zero-width AND at the same position as another block's extmark
+  -- 2. Its extmark overlaps with another block AND the line content doesn't match this block
+  -- 3. Its extmark is beyond buffer bounds
+  local deleted_blocks = {} -- block index -> true
+
+  -- Build a map of which blocks claim each row
+  ---@type table<integer, integer[]> row -> list of block indices
+  local row_to_blocks = {}
+  for i, info in pairs(extmark_info) do
+    local row = info.start_row
+    if not row_to_blocks[row] then
+      row_to_blocks[row] = {}
+    end
+    table.insert(row_to_blocks[row], i)
+  end
+
+  for i, info in pairs(extmark_info) do
+    local block = blocks[i]
+    local block_type = block:get_type()
+
+    if info.is_zero_width then
+      -- Check if there's another block (with content) at the same position
+      local found_content_block = false
+      for j, other_info in pairs(extmark_info) do
+        if i ~= j and not other_info.is_zero_width then
+          -- Check if the zero-width extmark is at the start of a content block
+          if info.start_row == other_info.start_row and info.start_col == other_info.start_col then
+            found_content_block = true
+            break
+          end
+        end
+      end
+
+      if found_content_block then
+        deleted_blocks[i] = true
+        log.debug('Block marked as deleted (zero-width at content block position)', {
+          index = i,
+          block_type = block_type,
+        })
+      else
+        -- Zero-width but no other block at same position
+        -- Check if the line has content (block content may still exist)
+        local line_content = ''
+        if info.start_row < total_lines then
+          local lines_at_row = vim.api.nvim_buf_get_lines(bufnr, info.start_row, info.start_row + 1, false)
+          line_content = lines_at_row[1] or ''
+        end
+
+        -- Special handling for divider blocks
+        -- Divider's get_text() returns '' but its expected content is '---'
+        if block_type == 'divider' then
+          if line_content ~= '---' then
+            deleted_blocks[i] = true
+            log.debug('Block marked as deleted (divider content mismatch)', {
+              index = i,
+              block_type = block_type,
+              line_content = line_content:sub(1, 30),
+            })
+          else
+            log.debug('Divider block still present', {
+              index = i,
+              block_type = block_type,
+            })
+          end
+        else
+          -- Get the block's original text to compare
+          local original_text = block.original_text or block:get_text() or ''
+
+          if #line_content == 0 and #original_text > 0 then
+            -- Line is empty but block originally had content - block was deleted
+            deleted_blocks[i] = true
+            log.debug('Block marked as deleted (zero-width with empty line, had content)', {
+              index = i,
+              block_type = block_type,
+              original_text_preview = original_text:sub(1, 20),
+            })
+          elseif #line_content == 0 and #original_text == 0 then
+            -- Line is empty and block was originally empty - NOT deleted, just empty
+            log.debug('Block is empty but not deleted (originally empty)', {
+              index = i,
+              block_type = block_type,
+            })
+          end
+        end
+      end
+    else
+      -- Non-zero-width extmark, but check for overlapping blocks on same row
+      local blocks_on_row = row_to_blocks[info.start_row] or {}
+      if #blocks_on_row > 1 then
+        -- Multiple blocks claim this row - need to check which one actually owns it
+        local line_content = ''
+        if info.start_row < total_lines then
+          local lines_at_row = vim.api.nvim_buf_get_lines(bufnr, info.start_row, info.start_row + 1, false)
+          line_content = lines_at_row[1] or ''
+        end
+
+        -- For divider blocks, check if the line is actually '---'
+        if block_type == 'divider' then
+          if line_content ~= '---' then
+            deleted_blocks[i] = true
+            log.debug('Block marked as deleted (divider at non-divider line)', {
+              index = i,
+              block_type = block_type,
+              line_content = line_content:sub(1, 30),
+            })
+          end
+        end
+        -- For other single-line read-only blocks, similar checks could be added
+      end
+    end
+  end
+
+  -- Also check for extmark positions beyond buffer bounds
+  for i, info in pairs(extmark_info) do
+    if info.start_row >= total_lines then
+      deleted_blocks[i] = true
+      log.debug('Block marked as deleted (beyond buffer bounds)', {
+        index = i,
+        block_type = blocks[i]:get_type(),
+      })
+    end
+  end
+
+  -- Third pass: assign line ranges
+  for i, block in ipairs(blocks) do
+    local info = extmark_info[i]
+
+    if not info then
+      -- No extmark info - block was deleted or never tracked
+      block:set_line_range(nil, nil)
+      log.debug('Block marked as deleted (no extmark)', {
+        index = i,
+        block_type = block:get_type(),
+      })
+    elseif deleted_blocks[i] then
+      block:set_line_range(nil, nil)
+    else
+      -- Valid block - set line range from extmark
+      local start_line = info.start_row + 1
+      local end_line = info.end_row + 1
+
+      if start_line <= end_line then
+        block:set_line_range(start_line, end_line)
+        log.debug('Block line range updated from extmark', {
+          index = i,
+          block_type = block:get_type(),
+          start_line = start_line,
+          end_line = end_line,
+        })
+      else
+        block:set_line_range(nil, nil)
+        log.debug('Block marked as deleted (invalid range)', {
+          index = i,
+          block_type = block:get_type(),
+        })
+      end
+    end
   end
 end
 

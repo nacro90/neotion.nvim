@@ -34,11 +34,30 @@ vim.opt.writebackup = false
 vim.opt.showmode = false
 vim.opt.shortmess:append('I')
 
--- Mock vim.ui.open to prevent browser opening during tests
+-- CRITICAL: Mock vim.ui.open to NEVER open browser during tests
+-- This must be set before ANY module is loaded
+local original_vim_ui_open = vim.ui.open
 vim.ui.open = function(url)
-  -- Log instead of opening browser
+  -- NEVER open browser - just log the URL
   vim.g._test_last_opened_url = url
+  return nil -- Return nil like a failed open
 end
+
+-- Also prevent any rawset/rawget tricks from restoring original
+local mt = getmetatable(vim.ui) or {}
+local original_newindex = mt.__newindex
+mt.__newindex = function(t, k, v)
+  if k == 'open' then
+    -- Silently ignore attempts to set vim.ui.open
+    vim.g._test_attempted_ui_open_override = true
+    return
+  end
+  if original_newindex then
+    return original_newindex(t, k, v)
+  end
+  rawset(t, k, v)
+end
+setmetatable(vim.ui, mt)
 
 -- Source plenary plugin to register commands
 if plenary_path then

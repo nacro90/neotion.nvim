@@ -147,6 +147,16 @@ function Block:type_changed()
   return false
 end
 
+---Render this block's line(s) with custom styling.
+---Override in subclasses that need special rendering (e.g., divider, code).
+---@param ctx neotion.RenderContext The render context
+---@return boolean handled True if block handled rendering, false for default text-based rendering
+function Block:render(ctx)
+  -- Default: use standard text-based rendering
+  -- Subclasses can override to provide custom rendering
+  return false
+end
+
 M.Block = Block
 
 return M

@@ -29,11 +29,18 @@ describe('neotion.model.registry', function()
     end)
 
     it('should return false for unsupported types', function()
+      -- Phase 5.7: code, quote, bulleted_list_item, divider are now supported
       assert.is_false(registry.is_supported('toggle'))
       assert.is_false(registry.is_supported('callout'))
-      assert.is_false(registry.is_supported('code'))
-      assert.is_false(registry.is_supported('quote'))
       assert.is_false(registry.is_supported('image'))
+      assert.is_false(registry.is_supported('embed'))
+    end)
+
+    it('should return true for Phase 5.7 block types', function()
+      assert.is_true(registry.is_supported('divider'))
+      assert.is_true(registry.is_supported('quote'))
+      assert.is_true(registry.is_supported('bulleted_list_item'))
+      assert.is_true(registry.is_supported('code'))
     end)
 
     it('should return false for unknown types', function()
@@ -166,16 +173,17 @@ describe('neotion.model.registry', function()
     end)
 
     it('should mix editable and read-only blocks', function()
+      -- Phase 5.7: code is now editable, use divider as read-only example
       local blocks_raw = {
         { id = '1', type = 'paragraph', paragraph = { rich_text = {} } },
-        { id = '2', type = 'code', code = { rich_text = {} } },
+        { id = '2', type = 'divider', divider = {} },
         { id = '3', type = 'heading_2', heading_2 = { rich_text = {} } },
       }
 
       local blocks = registry.deserialize_all(blocks_raw)
 
       assert.is_true(blocks[1]:is_editable())
-      assert.is_false(blocks[2]:is_editable())
+      assert.is_false(blocks[2]:is_editable()) -- divider is read-only
       assert.is_true(blocks[3]:is_editable())
     end)
   end)
@@ -194,8 +202,18 @@ describe('neotion.model.registry', function()
     it('should not contain unsupported types', function()
       local types = registry.get_supported_types()
 
+      -- Phase 5.7: code is now supported, use toggle and image as unsupported examples
       assert.is_false(vim.tbl_contains(types, 'toggle'))
-      assert.is_false(vim.tbl_contains(types, 'code'))
+      assert.is_false(vim.tbl_contains(types, 'image'))
+    end)
+
+    it('should contain Phase 5.7 types', function()
+      local types = registry.get_supported_types()
+
+      assert.is_true(vim.tbl_contains(types, 'divider'))
+      assert.is_true(vim.tbl_contains(types, 'quote'))
+      assert.is_true(vim.tbl_contains(types, 'bulleted_list_item'))
+      assert.is_true(vim.tbl_contains(types, 'code'))
     end)
   end)
 
@@ -229,10 +247,12 @@ describe('neotion.model.registry', function()
     end)
 
     it('should list all unsupported types', function()
+      -- Phase 5.7: code, quote, bulleted_list_item are now supported
+      -- Use toggle, image, embed as unsupported examples
       local blocks_raw = {
         { id = '1', type = 'toggle', toggle = {} },
-        { id = '2', type = 'code', code = {} },
-        { id = '3', type = 'image', image = {} },
+        { id = '2', type = 'image', image = {} },
+        { id = '3', type = 'embed', embed = {} },
       }
       local blocks = registry.deserialize_all(blocks_raw)
 

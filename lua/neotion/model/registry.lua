@@ -65,6 +65,7 @@ end
 ---@return neotion.Block
 function M.deserialize(raw)
   local handler = M.get_handler(raw.type)
+
   if handler then
     return handler.new(raw)
   end

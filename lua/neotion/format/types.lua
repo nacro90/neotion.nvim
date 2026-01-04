@@ -268,21 +268,44 @@ function RichTextSegment.from_api(api_item, start_col)
   })
 end
 
+--- Convert internal notion:// scheme to Notion API URL
+---@param href string
+---@return string
+local function normalize_href_for_api(href)
+  -- notion://page/id → https://www.notion.so/id
+  -- Pattern accepts both compact (abc123) and hyphenated (abc-123-def) UUIDs
+  local page_id = href:match('^notion://page/([a-zA-Z0-9%-]+)$')
+  if page_id then
+    return 'https://www.notion.so/' .. page_id
+  end
+
+  -- notion://block/id → https://www.notion.so/id (block anchor not supported by API)
+  local block_id = href:match('^notion://block/([a-zA-Z0-9%-]+)$')
+  if block_id then
+    return 'https://www.notion.so/' .. block_id
+  end
+
+  -- Already a valid URL, return as-is
+  return href
+end
+
 --- Convert to Notion API format
 ---@return table
 function RichTextSegment:to_api()
+  local api_href = self.href and normalize_href_for_api(self.href) or nil
+
   local result = {
     type = 'text',
     text = {
       content = self.text,
-      link = self.href and { url = self.href } or nil,
+      link = api_href and { url = api_href } or nil,
     },
     plain_text = self.text,
     annotations = self.annotations:to_api(),
   }
 
-  if self.href then
-    result.href = self.href
+  if api_href then
+    result.href = api_href
   end
 
   return result

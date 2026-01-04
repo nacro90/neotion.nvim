@@ -13,7 +13,8 @@ Notion integration for Neovim with **zero data loss** synchronization.
 - **Inline formatting** - Use markers like `**bold**`, `*italic*`, `[link](url)`
 - **Rich text display** - Anti-conceal rendering with extmarks
 - **Rich text preservation** - Unchanged text keeps formatting
-- **Extmark tracking** - Accurate block-to-line mapping through edits
+- **Link navigation** - `gf` follows links (external URLs open in browser, Notion pages open in Neovim)
+- **Internal page links** - `[text](notion://page/id)` syntax for linking to other Notion pages
 - **Sync with confirmation** - Optional confirmation on ambiguous changes
 - **Telescope integration** - Page search with Telescope (falls back to vim.ui.select)
 - **Recent pages** - Quick access to recently opened pages
@@ -35,25 +36,23 @@ Notion integration for Neovim with **zero data loss** synchronization.
 | `<u>text</u>` | underline |
 | `<c:red>text</c>` | colored text |
 | `[text](url)` | link |
+| `[text](notion://page/id)` | internal page link |
 
 ### Roadmap
 
 | Phase | Goal | Status |
 |-------|------|--------|
-| 1-5.5 | Foundation + Inline Formatting | ✅ Complete |
-| 5.6 | Real-time rendering + `gf` navigation | 🔜 Next |
-| 5.7 | Basic blocks (divider, quote, bullet, code) | Planned |
+| 1-5.6 | Foundation + Formatting + Navigation | ✅ Complete |
+| 5.7 | Basic blocks (divider, quote, bullet, code) | 🔜 Next |
 | 6 | Rate limiting (API protection) | Planned |
 | 7 | SQLite cache (offline metadata) | Planned |
 | 8 | Live search + `[[` completion | Planned |
 | 9 | Slash commands + advanced blocks | Planned |
 | 10 | Full lossless + conflict resolution | Planned |
 
-### Coming Soon (Phase 5.6-5.7)
-- **Real-time formatting** - Markers render as you type
-- **Link navigation** - `gf` follows links under cursor
-- **Default keymaps** - Optional `<C-b>` for bold, etc.
+### Coming Soon (Phase 5.7)
 - **More block types** - Divider, quote, bullet list, code blocks
+- **Real-time formatting** - Markers render as you type
 
 ### Future Plans
 - `[[` wiki-link completion for page linking

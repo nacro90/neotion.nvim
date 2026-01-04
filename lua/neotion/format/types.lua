@@ -270,29 +270,39 @@ end
 
 --- Convert internal notion:// scheme to Notion API URL
 ---@param href string
----@return string
+---@return string|nil normalized URL or nil if unsupported
+---@return string|nil error message if unsupported
 local function normalize_href_for_api(href)
   -- notion://page/id → https://www.notion.so/id
   -- Pattern accepts both compact (abc123) and hyphenated (abc-123-def) UUIDs
   local page_id = href:match('^notion://page/([a-zA-Z0-9%-]+)$')
   if page_id then
-    return 'https://www.notion.so/' .. page_id
+    return 'https://www.notion.so/' .. page_id, nil
   end
 
-  -- notion://block/id → https://www.notion.so/id (block anchor not supported by API)
-  local block_id = href:match('^notion://block/([a-zA-Z0-9%-]+)$')
-  if block_id then
-    return 'https://www.notion.so/' .. block_id
+  -- notion://block/id is not supported - return nil to strip the link
+  if href:match('^notion://block/') then
+    return nil, 'Block links are not supported'
   end
 
   -- Already a valid URL, return as-is
-  return href
+  return href, nil
 end
 
 --- Convert to Notion API format
 ---@return table
 function RichTextSegment:to_api()
-  local api_href = self.href and normalize_href_for_api(self.href) or nil
+  local api_href = nil
+  if self.href then
+    local normalized, err = normalize_href_for_api(self.href)
+    if normalized then
+      api_href = normalized
+    elseif err then
+      -- Log warning but continue without link (text will be plain)
+      local log = require('neotion.log').get_logger('format.types')
+      log.warn('Unsupported link stripped', { href = self.href, reason = err })
+    end
+  end
 
   local result = {
     type = 'text',

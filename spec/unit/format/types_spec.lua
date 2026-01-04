@@ -451,15 +451,17 @@ describe('neotion.format.types', function()
         assert.are.equal('https://www.notion.so/1647b4fb-fc3e-808e-a9b6-e9c8b94ed5ce', api.text.link.url)
       end)
 
-      it('should convert notion://block/id to Notion API URL', function()
+      it('should strip notion://block links (not supported)', function()
         local segment = types.RichTextSegment.new('Block Link', {
           href = 'notion://block/abc123def456',
         })
 
         local api = segment:to_api()
 
-        assert.are.equal('https://www.notion.so/abc123def456', api.text.link.url)
-        assert.are.equal('https://www.notion.so/abc123def456', api.href)
+        -- Block links are stripped - text remains but no link
+        assert.is_nil(api.text.link)
+        assert.is_nil(api.href)
+        assert.are.equal('Block Link', api.text.content)
       end)
 
       it('should preserve regular URLs unchanged', function()

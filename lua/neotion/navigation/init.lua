@@ -7,9 +7,9 @@ local log = require('neotion.log').get_logger('navigation')
 ---@class neotion.Link
 ---@field text string Display text of the link
 ---@field url string Raw URL
----@field type 'external'|'notion_page'|'notion_block'|'unknown'
+---@field type 'external'|'notion_page'|'unsupported'|'unknown'
 ---@field page_id? string Extracted page ID for notion_page type
----@field block_id? string Extracted block ID for notion_block type
+---@field reason? string Reason for unsupported links
 ---@field start_col integer 1-indexed start column of link in line
 ---@field end_col integer 1-indexed end column of link in line (after closing paren)
 
@@ -18,8 +18,8 @@ local LINK_PATTERN = '%[(.-)%]%(([^%)]+)%)'
 
 ---Classify a URL and extract metadata
 ---@param url string
----@return 'external'|'notion_page'|'notion_block'|'unknown' type
----@return table|nil meta Additional metadata (page_id, block_id)
+---@return 'external'|'notion_page'|'unsupported'|'unknown' type
+---@return table|nil meta Additional metadata (page_id, reason)
 function M.classify_url(url)
   if not url or url == '' then
     return 'unknown', nil
@@ -31,10 +31,9 @@ function M.classify_url(url)
     return 'notion_page', { page_id = page_id }
   end
 
-  -- notion://block/id format
-  local block_id = url:match('^notion://block/([a-zA-Z0-9]+)$')
-  if block_id then
-    return 'notion_block', { block_id = block_id }
+  -- notion://block/id format - not supported yet, treat as unsupported
+  if url:match('^notion://block/') then
+    return 'unsupported', { reason = 'Block links are not supported yet' }
   end
 
   -- notion.so URLs: https://notion.so/Page-Title-abc123... or https://www.notion.so/workspace/Page-abc123...
@@ -185,10 +184,10 @@ function M.goto_link(link, opts)
         vim.notify('Cannot open Notion page: neotion.open not available', vim.log.levels.WARN)
       end
     end
-  elseif link.type == 'notion_block' then
-    -- Block navigation - show warning for now, implement in future
-    vim.notify('Block navigation not yet implemented', vim.log.levels.INFO)
-    log.info('Block navigation requested', { block_id = link.block_id })
+  elseif link.type == 'unsupported' then
+    local reason = link.reason or 'Link type not supported'
+    vim.notify(reason, vim.log.levels.INFO)
+    log.info('Unsupported link', { url = link.url, reason = reason })
   else
     vim.notify('Unknown link type: ' .. link.url, vim.log.levels.WARN)
   end

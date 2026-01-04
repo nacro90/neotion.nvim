@@ -91,15 +91,15 @@ describe('navigation', function()
       buffer_helper.delete(bufnr)
     end)
 
-    it('should detect notion block link', function()
+    it('should detect notion block link as unsupported', function()
       local bufnr = buffer_helper.create({ 'See [Block](notion://block/def456abc123789012345678) here' })
       buffer_helper.set_cursor(1, 5)
 
       local link = navigation.parse_link_at_position(bufnr, 1, 5)
 
       assert.is_not_nil(link)
-      assert.are.equal('notion_block', link.type)
-      assert.are.equal('def456abc123789012345678', link.block_id)
+      assert.are.equal('unsupported', link.type)
+      assert.are.equal('Block links are not supported yet', link.reason)
       buffer_helper.delete(bufnr)
     end)
 
@@ -243,10 +243,10 @@ describe('navigation', function()
       assert.are.equal('abc123def456', meta.page_id)
     end)
 
-    it('should classify notion://block/ as notion_block', function()
+    it('should classify notion://block/ as unsupported', function()
       local type, meta = navigation.classify_url('notion://block/abc123def456')
-      assert.are.equal('notion_block', type)
-      assert.are.equal('abc123def456', meta.block_id)
+      assert.are.equal('unsupported', type)
+      assert.are.equal('Block links are not supported yet', meta.reason)
     end)
 
     it('should classify mailto as external', function()

@@ -21,6 +21,11 @@
 ---@field editing_mode? neotion.EditingMode Newline behavior: 'markdown' (double enter = new block) or 'notion' (enter = new block) (default: 'markdown')
 ---@field confirm_sync? neotion.ConfirmSync When to ask for sync confirmation: 'always', 'on_ambiguity', 'never' (default: 'on_ambiguity')
 ---@field input? neotion.InputConfig Input system configuration (shortcuts and triggers)
+---@field render? neotion.RenderUserConfig Render system configuration
+
+---@class neotion.RenderUserConfig
+---@field enabled? boolean Enable rendering (default: true)
+---@field debounce_ms? integer Debounce delay for re-rendering in ms (default: 100)
 
 ---@class neotion.Icons
 ---@field synced? string Icon for synced blocks (default: "✓")
@@ -70,6 +75,11 @@ vim.g.neotion = vim.g.neotion
 ---@field editing_mode neotion.EditingMode
 ---@field confirm_sync neotion.ConfirmSync
 ---@field input neotion.InternalInputConfig
+---@field render neotion.InternalRenderConfig
+
+---@class neotion.InternalRenderConfig
+---@field enabled boolean
+---@field debounce_ms integer
 
 ---@class neotion.InternalIcons
 ---@field synced string
@@ -143,6 +153,10 @@ local default_config = {
     triggers = {
       enabled = false, -- Phase 8+: enable for / and @ support
     },
+  },
+  render = {
+    enabled = true,
+    debounce_ms = 100, -- Debounce delay for re-rendering (0 = no debounce)
   },
 }
 
@@ -280,6 +294,23 @@ local function validate(opts)
       if not triggers_ok then
         return false, triggers_err
       end
+    end
+  end
+
+  -- Validate nested render table if provided
+  if opts.render then
+    local render_ok, render_err = pcall(vim.validate, {
+      ['render.enabled'] = { opts.render.enabled, { 'boolean', 'nil' }, 'boolean or nil' },
+      ['render.debounce_ms'] = {
+        opts.render.debounce_ms,
+        function(v)
+          return v == nil or (type(v) == 'number' and v >= 0 and v <= 1000)
+        end,
+        'number between 0 and 1000',
+      },
+    })
+    if not render_ok then
+      return false, render_err
     end
   end
 

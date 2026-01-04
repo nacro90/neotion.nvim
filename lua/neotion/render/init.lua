@@ -30,11 +30,36 @@ local config = vim.tbl_deep_extend('force', {}, default_config)
 ---@type table<integer, boolean>
 local attached_buffers = {}
 
+--- Debounce timers per buffer (Vimscript timer IDs from timer_start)
+---@type table<integer, integer?>
+local debounce_timers = {}
+
 --- Global enabled state
 local enabled = true
 
+--- Get debounce delay from main config
+---@return integer
+local function get_debounce_ms()
+  local neotion_config = require('neotion.config').get()
+  return neotion_config.render and neotion_config.render.debounce_ms or 100
+end
+
+--- Safely stop a timer
+---@param timer_id integer?
+local function stop_timer(timer_id)
+  if timer_id and type(timer_id) == 'number' then
+    pcall(vim.fn.timer_stop, timer_id)
+  end
+end
+
 --- Reset all state (for testing)
 function M.reset()
+  -- Cancel all pending debounce timers
+  for _, timer in pairs(debounce_timers) do
+    stop_timer(timer)
+  end
+  debounce_timers = {}
+
   for bufnr, _ in pairs(attached_buffers) do
     M.detach(bufnr)
   end
@@ -194,7 +219,21 @@ function M.attach(bufnr)
     group = augroup,
     buffer = bufnr,
     callback = function()
-      M.refresh(bufnr)
+      local debounce_ms = get_debounce_ms()
+      if debounce_ms > 0 then
+        -- Cancel pending timer
+        stop_timer(debounce_timers[bufnr])
+        -- Schedule debounced refresh using Vimscript timer
+        debounce_timers[bufnr] = vim.fn.timer_start(debounce_ms, function()
+          debounce_timers[bufnr] = nil
+          if M.is_attached(bufnr) then
+            M.refresh(bufnr)
+          end
+        end)
+      else
+        -- No debounce, immediate refresh
+        M.refresh(bufnr)
+      end
     end,
   })
 
@@ -233,6 +272,10 @@ function M.detach(bufnr)
   if not M.is_attached(bufnr) then
     return
   end
+
+  -- Cancel pending debounce timer
+  stop_timer(debounce_timers[bufnr])
+  debounce_timers[bufnr] = nil
 
   -- Clear extmarks
   extmarks.clear_buffer(bufnr)

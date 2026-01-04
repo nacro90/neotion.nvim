@@ -374,4 +374,98 @@ describe('neotion.render.init', function()
       assert.are.equal(0, marks)
     end)
   end)
+
+  describe('TextChanged debounce', function()
+    it('should debounce rapid TextChanged events', function()
+      local config = require('neotion.config')
+      -- Set a small debounce for testing
+      config.setup({ render = { debounce_ms = 50 } })
+
+      vim.api.nvim_set_current_buf(bufnr)
+      render.attach(bufnr)
+
+      -- Track refresh calls by counting marks after clear
+      local refresh_happened = false
+      extmarks.clear_buffer(bufnr)
+
+      -- Trigger multiple rapid TextChanged events
+      vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, { 'change 1' })
+      vim.api.nvim_exec_autocmds('TextChanged', { buffer = bufnr })
+      vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, { 'change 2' })
+      vim.api.nvim_exec_autocmds('TextChanged', { buffer = bufnr })
+      vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, { 'change 3 **bold**' })
+      vim.api.nvim_exec_autocmds('TextChanged', { buffer = bufnr })
+
+      -- Immediately after, marks should still be cleared (debounce pending)
+      local marks_immediate = #extmarks.get_buffer_marks(bufnr)
+      assert.are.equal(0, marks_immediate, 'Marks should be 0 immediately (debounce pending)')
+
+      -- Wait for debounce to complete
+      vim.wait(100, function()
+        local marks = #extmarks.get_buffer_marks(bufnr)
+        if marks > 0 then
+          refresh_happened = true
+          return true
+        end
+        return false
+      end)
+
+      -- After debounce, refresh should have happened
+      assert.is_true(refresh_happened, 'Refresh should happen after debounce period')
+
+      -- Reset config
+      config.reset()
+    end)
+
+    it('should refresh immediately when debounce_ms is 0', function()
+      local config = require('neotion.config')
+      -- Disable debounce
+      config.setup({ render = { debounce_ms = 0 } })
+
+      vim.api.nvim_set_current_buf(bufnr)
+      render.attach(bufnr)
+
+      -- Clear marks
+      extmarks.clear_buffer(bufnr)
+
+      -- Trigger TextChanged
+      vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, { 'immediate **bold**' })
+      vim.api.nvim_exec_autocmds('TextChanged', { buffer = bufnr })
+
+      -- Should have marks immediately (no debounce)
+      local marks = #extmarks.get_buffer_marks(bufnr)
+      assert.is_true(marks > 0, 'Marks should appear immediately when debounce disabled')
+
+      -- Reset config
+      config.reset()
+    end)
+
+    it('should cancel pending debounce timer on detach', function()
+      local config = require('neotion.config')
+      config.setup({ render = { debounce_ms = 100 } })
+
+      vim.api.nvim_set_current_buf(bufnr)
+      render.attach(bufnr)
+      extmarks.clear_buffer(bufnr)
+
+      -- Trigger TextChanged to start debounce timer
+      vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, { 'pending **bold**' })
+      vim.api.nvim_exec_autocmds('TextChanged', { buffer = bufnr })
+
+      -- Detach before debounce completes
+      render.detach(bufnr)
+
+      -- Wait for what would have been the debounce period
+      vim.wait(150, function()
+        return false
+      end)
+
+      -- Should not have any marks (timer was cancelled)
+      local marks = #extmarks.get_buffer_marks(bufnr)
+      assert.are.equal(0, marks, 'Detach should cancel pending debounce timer')
+
+      -- Reset config
+      config.reset()
+    end)
+  end)
 end)

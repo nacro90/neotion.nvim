@@ -103,20 +103,25 @@ function M.create(bufnr)
       original_text_preview = (block.original_text or ''):sub(1, 30),
     })
 
-    -- Check if block type changed (e.g., heading level)
+    -- Check if block type changed (e.g., heading level, paragraph→bullet)
     -- Notion API doesn't support type changes, so we need delete+create
     if type_changed then
+      -- For type changes, get content without prefix if converting from paragraph
+      -- get_converted_content() strips the prefix (e.g., "- " from "- item")
+      local content = block.get_converted_content and block:get_converted_content() or block:get_text()
+
       log.info('Block type changed, will use delete+create', {
         block_id = block_id,
         old_type = original_type,
         new_type = block_type,
+        content_preview = content:sub(1, 30),
       })
       table.insert(plan.type_changes, {
         block = block,
         block_id = block_id,
         old_type = original_type,
         new_type = block_type,
-        content = block:get_text(),
+        content = content,
       })
     else
       log.debug('Block content changed, will update', {

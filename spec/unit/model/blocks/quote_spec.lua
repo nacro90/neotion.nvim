@@ -437,4 +437,146 @@ describe('neotion.model.blocks.quote', function()
       assert.is_true(quote_module.is_editable())
     end)
   end)
+
+  -- Phase 5.8: Block Type Conversion
+  describe('type conversion', function()
+    describe('type_changed', function()
+      it('should return false when quote prefix is preserved', function()
+        local raw = {
+          id = 'test',
+          type = 'quote',
+          quote = { rich_text = { { plain_text = 'Text' } } },
+        }
+        local block = quote_module.new(raw)
+
+        block:update_from_lines({ '| Text' })
+
+        assert.is_false(block:type_changed())
+      end)
+
+      it('should return true when prefix is removed (convert to paragraph)', function()
+        local raw = {
+          id = 'test',
+          type = 'quote',
+          quote = { rich_text = { { plain_text = 'Text' } } },
+        }
+        local block = quote_module.new(raw)
+
+        block:update_from_lines({ 'No prefix anymore' })
+
+        assert.is_true(block:type_changed())
+      end)
+
+      it('should return true when changed to bullet prefix', function()
+        local raw = {
+          id = 'test',
+          type = 'quote',
+          quote = { rich_text = { { plain_text = 'Text' } } },
+        }
+        local block = quote_module.new(raw)
+
+        block:update_from_lines({ '- Now a bullet' })
+
+        assert.is_true(block:type_changed())
+      end)
+    end)
+
+    describe('get_type', function()
+      it('should return quote when prefix preserved', function()
+        local raw = {
+          id = 'test',
+          type = 'quote',
+          quote = { rich_text = { { plain_text = 'Text' } } },
+        }
+        local block = quote_module.new(raw)
+
+        block:update_from_lines({ '| Text' })
+
+        assert.are.equal('quote', block:get_type())
+      end)
+
+      it('should return paragraph when prefix removed', function()
+        local raw = {
+          id = 'test',
+          type = 'quote',
+          quote = { rich_text = { { plain_text = 'Text' } } },
+        }
+        local block = quote_module.new(raw)
+
+        block:update_from_lines({ 'Plain text now' })
+
+        assert.are.equal('paragraph', block:get_type())
+      end)
+
+      it('should return bulleted_list_item when changed to bullet prefix', function()
+        local raw = {
+          id = 'test',
+          type = 'quote',
+          quote = { rich_text = { { plain_text = 'Text' } } },
+        }
+        local block = quote_module.new(raw)
+
+        block:update_from_lines({ '- Bullet now' })
+
+        assert.are.equal('bulleted_list_item', block:get_type())
+      end)
+    end)
+
+    describe('get_text for conversion', function()
+      it('should return content without prefix when converting to paragraph', function()
+        local raw = {
+          id = 'test',
+          type = 'quote',
+          quote = { rich_text = { { plain_text = 'Text' } } },
+        }
+        local block = quote_module.new(raw)
+
+        block:update_from_lines({ 'Plain text' })
+
+        assert.are.equal('Plain text', block:get_text())
+      end)
+    end)
+
+    describe('get_converted_content', function()
+      it('should return text when not converting', function()
+        local raw = {
+          id = 'test',
+          type = 'quote',
+          quote = { rich_text = { { plain_text = 'Quote text' } } },
+        }
+        local block = quote_module.new(raw)
+
+        block:update_from_lines({ '| Quote text' })
+
+        assert.are.equal('Quote text', block:get_converted_content())
+      end)
+
+      it('should strip bullet prefix when converting to bullet', function()
+        local raw = {
+          id = 'test',
+          type = 'quote',
+          quote = { rich_text = { { plain_text = 'Text' } } },
+        }
+        local block = quote_module.new(raw)
+
+        block:update_from_lines({ '- Now a bullet' })
+
+        assert.are.equal('Now a bullet', block:get_converted_content())
+      end)
+
+      it('should return full text when converting to paragraph', function()
+        local raw = {
+          id = 'test',
+          type = 'quote',
+          quote = { rich_text = { { plain_text = 'Text' } } },
+        }
+        local block = quote_module.new(raw)
+
+        block:update_from_lines({ 'Plain paragraph' })
+
+        -- No prefix to strip, return as-is
+        assert.are.equal('Plain paragraph', block:get_converted_content())
+      end)
+    end)
+  end)
 end)

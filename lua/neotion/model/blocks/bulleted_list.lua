@@ -14,6 +14,7 @@ local BULLET_PREFIX = '- '
 ---@field rich_text table[] Original rich_text array (preserved for round-trip)
 ---@field color string Block color
 ---@field original_text string Text at creation (for change detection)
+---@field target_type string? Target type for conversion (Phase 5.8)
 local BulletedListBlock = setmetatable({}, { __index = Block })
 BulletedListBlock.__index = BulletedListBlock
 
@@ -135,11 +136,55 @@ function BulletedListBlock:update_from_lines(lines)
     self.text = new_text
     self.dirty = true
   end
+
+  -- Phase 5.8: Detect type conversion
+  -- Check if the prefix was removed or changed to a different type
+  local detection = require('neotion.model.blocks.detection')
+  local should_convert, target = detection.should_convert('bulleted_list_item', line)
+  if should_convert and target then
+    self.target_type = target
+    -- Store the content without any prefix for conversion
+    if target == 'paragraph' then
+      self.text = line -- No prefix stripping for paragraph
+    end
+    self.dirty = true
+  else
+    self.target_type = nil
+  end
 end
 
 ---Get current text content (without prefix)
 ---@return string
 function BulletedListBlock:get_text()
+  return self.text
+end
+
+---Check if block type has changed (Phase 5.8)
+---@return boolean
+function BulletedListBlock:type_changed()
+  return self.target_type ~= nil
+end
+
+---Get the effective block type (target type if converting)
+---@return string
+function BulletedListBlock:get_type()
+  return self.target_type or self.type
+end
+
+---Get content for conversion (strips prefix for target type)
+---@return string
+function BulletedListBlock:get_converted_content()
+  if not self.target_type then
+    return self.text
+  end
+
+  -- When converting to another type, strip any detected prefix
+  local detection = require('neotion.model.blocks.detection')
+  local _, prefix = detection.detect_type(self.text)
+  if prefix then
+    return detection.strip_prefix(self.text, prefix)
+  end
+
   return self.text
 end
 

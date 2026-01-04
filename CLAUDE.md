@@ -1069,22 +1069,14 @@ vim.g.neotion = vim.g.neotion
 - [x] **Testing:** 800+ test geçiyor
 - [x] **Compatibility:** Lua 5.1 API
 
-## Sonraki Adım: Phase 5.8 (Block Type Conversion)
+## Sonraki Adım: Phase 7 (SQLite Cache)
 
-Phase 5.7 tamamlandı. Sırada Phase 5.8 var:
-
-**Problem:** `o` ile yeni satır açıp `- item` yazıldığında paragraph olarak kalıyor.
-
-**Yapılacaklar:**
-1. Paragraph'da `- `, `| ` gibi prefix'leri algıla
-2. `type_changed()` metodunu override et
-3. Sync'te delete + create akışını uygula
-
-**Architect Danışması Gerekli:** Extmark tracking ile type conversion etkileşimi
+Phase 5.8 tamamlandı. Sırada Phase 7 var (Phase 6 zaten tamamlandı).
 
 **Known Limitations:**
 - Block links (`notion://block/id`) are not supported yet
-- `o` key for new line insertion causes type conversion issues (Phase 5.8 ile çözülecek)
+- Nested list items (indentation) deferred to Phase 5.10
+- Auto-continuation (Enter after list item adds prefix) deferred to Phase 5.9
 
 ## Roadmap Summary
 
@@ -1092,9 +1084,11 @@ Phase 5.7 tamamlandı. Sırada Phase 5.8 var:
 |-------|------|------------|--------|
 | 1-5.6 | Foundation + Formatting + Navigation | - | ✅ COMPLETE |
 | 5.7 | Basic Blocks (divider, quote, bullet, code) | S-M | ✅ COMPLETE |
-| 5.8 | Block Type Conversion (paragraph → list/quote) | M | 🔜 NEXT |
+| 5.8 | Block Type Conversion (paragraph ↔ list/quote) | M | ✅ COMPLETE |
+| 5.9 | Auto-continuation (list item Enter) | S | TODO |
+| 5.10 | Nested blocks (indentation) | M | TODO |
 | 6 | Rate Limiting | M | ✅ COMPLETE |
-| 7 | SQLite Cache | L | TODO |
+| 7 | SQLite Cache | L | 🔜 NEXT |
 | 8 | Live Search + `[[` | M | TODO |
 | 9 | Slash Commands + Advanced Blocks | L | TODO |
 | 10 | Full Lossless + Polish | L | TODO |
@@ -1219,33 +1213,30 @@ Log seviyesini DEBUG yapmak için:
 - [ ] Büyük sayfalarda (100+ block) refresh_line_ranges performansını ölç
 - [ ] Debounce TextChanged handler'ını optimize et
 
-### Block Type Conversion (Phase 5.8 - TODO)
+### Block Type Conversion (Phase 5.8 - ✅ COMPLETE)
 
-**Problem:** Kullanıcı `o` ile yeni satır açıp `- item` yazdığında, bu içerik mevcut bir paragraph block'a düşüyor ve Notion'a paragraph olarak gidiyor. `bulleted_list_item` olarak gitmesi gerekiyor.
+**Implemented:** Bidirectional block type conversion based on content prefix.
 
-**Kullanıcı Akışı:**
-1. Buffer'da `o` ile yeni satır aç
-2. `- my item` yaz
-3. `:w` ile kaydet
-4. **Beklenen:** Notion'da `bulleted_list_item` olarak görünsün
-5. **Mevcut:** Notion'da `paragraph` içinde `- my item` metni olarak görünüyor
+**Desteklenen Dönüşümler:**
+- `paragraph` → `bulleted_list_item` (prefix: `- `, `* `, `+`)
+- `paragraph` → `quote` (prefix: `| `)
+- `bulleted_list_item` → `paragraph` (prefix kaldırıldığında)
+- `bulleted_list_item` → `quote` (prefix: `| `)
+- `quote` → `paragraph` (prefix kaldırıldığında)
+- `quote` → `bulleted_list_item` (prefix: `- `)
 
-**Teknik Analiz:**
-- `o` tuşu mevcut block'un extmark aralığına yeni satır ekliyor
-- Yeni satırdaki içerik o block'un parçası olarak algılanıyor
-- Paragraph block `- ` prefix'ini algılayıp type conversion yapmıyor
-- Notion API'de block type değişimi için `update` yerine `delete + create` gerekiyor
+**Yeni Dosyalar:**
+- `lua/neotion/model/blocks/detection.lua` - Prefix pattern detection
+- `spec/unit/model/blocks/detection_spec.lua` - 42 test
 
-**Çözüm Gereksinimleri:**
-1. Paragraph'da `- `, `* `, `+ ` prefix'lerini algılama
-2. Quote için `| `, `> ` prefix'lerini algılama
-3. `type_changed()` metodunu override etme
-4. Sync planında `type_changes` olarak işleme
-5. API'de delete + create akışı
+**Güncellenmiş Dosyalar:**
+- `paragraph.lua` - `target_type`, `type_changed()`, `get_type()`, `get_converted_content()`
+- `bulleted_list.lua` - Aynı pattern
+- `quote.lua` - Aynı pattern + backwards compat (`>` prefix existing quotes için kabul edilir)
+- `sync/plan.lua` - `get_converted_content()` kullanımı
 
-**İlgili Kod:**
-- `lua/neotion/model/blocks/paragraph.lua` - `update_from_lines()`, `type_changed()`
-- `lua/neotion/sync/plan.lua` - `type_changes` handling (altyapı mevcut)
-- `lua/neotion/sync/init.lua` - delete + create execution
-
-**Önemli:** Bu özellik için architect agent'a danışılacak - extmark tracking ile type conversion'ın nasıl etkileşeceği düşünülmeli.
+**Kararlar:**
+- `>` prefix quote için trigger ETMİYOR (Phase 9 toggle için reserved)
+- Sadece `| ` prefix quote trigger ediyor
+- Multi-line paragraph conversion Phase 5.9/5.10'a ertelendi
+- On-save conversion (real-time değil)

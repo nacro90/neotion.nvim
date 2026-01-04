@@ -699,4 +699,186 @@ describe('neotion.model.blocks.paragraph', function()
       end)
     end)
   end)
+
+  -- Phase 5.8: Block Type Conversion
+  describe('type conversion', function()
+    describe('type_changed', function()
+      it('should return false for normal paragraph', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = { { plain_text = 'Normal text' } } },
+        }
+        local block = paragraph_module.new(raw)
+
+        block:update_from_lines({ 'Normal text' })
+
+        assert.is_false(block:type_changed())
+      end)
+
+      it('should return true when content has bullet prefix', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = { { plain_text = 'Original' } } },
+        }
+        local block = paragraph_module.new(raw)
+
+        block:update_from_lines({ '- bullet item' })
+
+        assert.is_true(block:type_changed())
+      end)
+
+      it('should return true when content has quote prefix', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = { { plain_text = 'Original' } } },
+        }
+        local block = paragraph_module.new(raw)
+
+        block:update_from_lines({ '| quoted text' })
+
+        assert.is_true(block:type_changed())
+      end)
+
+      it('should return false for multi-line content with prefix', function()
+        -- Multi-line paragraphs don't convert
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = {} },
+        }
+        local block = paragraph_module.new(raw)
+
+        block:update_from_lines({ '- line one', 'line two' })
+
+        assert.is_false(block:type_changed())
+      end)
+    end)
+
+    describe('get_type', function()
+      it('should return paragraph for normal content', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = { { plain_text = 'Normal' } } },
+        }
+        local block = paragraph_module.new(raw)
+
+        block:update_from_lines({ 'Normal' })
+
+        assert.are.equal('paragraph', block:get_type())
+      end)
+
+      it('should return bulleted_list_item when bullet prefix detected', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = {} },
+        }
+        local block = paragraph_module.new(raw)
+
+        block:update_from_lines({ '- bullet item' })
+
+        assert.are.equal('bulleted_list_item', block:get_type())
+      end)
+
+      it('should return quote when quote prefix detected', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = {} },
+        }
+        local block = paragraph_module.new(raw)
+
+        block:update_from_lines({ '| quoted' })
+
+        assert.are.equal('quote', block:get_type())
+      end)
+
+      it('should detect asterisk bullet prefix', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = {} },
+        }
+        local block = paragraph_module.new(raw)
+
+        block:update_from_lines({ '* bullet' })
+
+        assert.are.equal('bulleted_list_item', block:get_type())
+      end)
+
+      it('should detect plus bullet prefix', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = {} },
+        }
+        local block = paragraph_module.new(raw)
+
+        block:update_from_lines({ '+ bullet' })
+
+        assert.are.equal('bulleted_list_item', block:get_type())
+      end)
+    end)
+
+    describe('get_converted_content', function()
+      it('should return text without prefix for bullet', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = {} },
+        }
+        local block = paragraph_module.new(raw)
+
+        block:update_from_lines({ '- item text' })
+
+        assert.are.equal('item text', block:get_converted_content())
+      end)
+
+      it('should return text without prefix for quote', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = {} },
+        }
+        local block = paragraph_module.new(raw)
+
+        block:update_from_lines({ '| quoted text' })
+
+        assert.are.equal('quoted text', block:get_converted_content())
+      end)
+
+      it('should return original text when no conversion', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = { { plain_text = 'Normal' } } },
+        }
+        local block = paragraph_module.new(raw)
+
+        block:update_from_lines({ 'Normal' })
+
+        assert.are.equal('Normal', block:get_converted_content())
+      end)
+    end)
+
+    describe('dirty state with type conversion', function()
+      it('should mark dirty when type changes', function()
+        local raw = {
+          id = 'test',
+          type = 'paragraph',
+          paragraph = { rich_text = { { plain_text = '- item' } } },
+        }
+        local block = paragraph_module.new(raw)
+        block.dirty = false
+
+        block:update_from_lines({ '- new item' })
+
+        assert.is_true(block:is_dirty())
+      end)
+    end)
+  end)
 end)

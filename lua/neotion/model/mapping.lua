@@ -161,31 +161,32 @@ function M.get_editable_blocks(bufnr)
   return editable
 end
 
----Refresh line ranges from extmark positions
----Extmarks are automatically updated by Neovim when buffer content changes,
----so they reflect the true position of each block after edits like 'o' or 'dd'.
+---Refresh line ranges based on block order and format
+---Note: We don't rely on extmarks for position tracking because they can shift
+---unexpectedly during buffer edits. Instead, we calculate positions from:
+--- 1. The stored header line count
+--- 2. Each block's formatted line count
 ---@param bufnr integer
 function M.refresh_line_ranges(bufnr)
   local blocks = buffer_blocks[bufnr]
-  local extmarks = block_extmarks[bufnr]
-  if not blocks or not extmarks then
+  if not blocks then
     return
   end
 
-  for i, block in ipairs(blocks) do
-    local extmark_id = extmarks[i]
-    if extmark_id then
-      -- Get current extmark position (0-indexed)
-      local mark = vim.api.nvim_buf_get_extmark_by_id(bufnr, ns_id, extmark_id, { details = true })
-      if mark and #mark >= 3 then
-        local start_row = mark[1] -- 0-indexed
-        local details = mark[3]
-        local end_row = details and details.end_row or start_row
+  -- Get header line count from buffer data
+  local buffer = require('neotion.buffer')
+  local data = buffer.get_data(bufnr)
+  local header_lines = data and data.header_line_count or 0
 
-        -- Convert to 1-indexed line numbers
-        block:set_line_range(start_row + 1, end_row + 1)
-      end
-    end
+  -- Recalculate line ranges based on block order
+  local current_line = header_lines + 1
+
+  for _, block in ipairs(blocks) do
+    local block_lines = block:format({})
+    local line_count = #block_lines
+
+    block:set_line_range(current_line, current_line + line_count - 1)
+    current_line = current_line + line_count
   end
 end
 

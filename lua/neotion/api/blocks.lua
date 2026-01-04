@@ -49,7 +49,7 @@ local M = {}
 ---@param cursor? string Pagination cursor
 function M.get_children(block_id, callback, cursor)
   local auth = require('neotion.api.auth')
-  local client = require('neotion.api.client')
+  local throttle = require('neotion.api.throttle')
 
   local token_result = auth.get_token()
   if not token_result.token then
@@ -63,7 +63,11 @@ function M.get_children(block_id, callback, cursor)
     endpoint = endpoint .. '&start_cursor=' .. cursor
   end
 
-  client.get(endpoint, token_result.token, function(response)
+  throttle.get(endpoint, token_result.token, function(response)
+    if response.cancelled then
+      callback({ blocks = {}, has_more = false, error = 'Request cancelled' })
+      return
+    end
     if response.error then
       callback({ blocks = {}, has_more = false, error = response.error })
       return
@@ -211,7 +215,7 @@ end
 ---@param callback fun(result: neotion.api.UpdateResult)
 function M.update(block_id, block_json, callback)
   local auth = require('neotion.api.auth')
-  local client = require('neotion.api.client')
+  local throttle = require('neotion.api.throttle')
 
   local token_result = auth.get_token()
   if not token_result.token then
@@ -234,7 +238,11 @@ function M.update(block_id, block_json, callback)
   body.parent = nil
   body.object = nil
 
-  client.patch('/blocks/' .. normalized_id, token_result.token, body, function(response)
+  throttle.patch('/blocks/' .. normalized_id, token_result.token, body, function(response)
+    if response.cancelled then
+      callback({ error = 'Request cancelled' })
+      return
+    end
     if response.error then
       callback({ error = response.error })
       return
@@ -257,7 +265,7 @@ end
 ---@param callback fun(result: neotion.api.AppendResult)
 function M.append(parent_id, children, callback)
   local auth = require('neotion.api.auth')
-  local client = require('neotion.api.client')
+  local throttle = require('neotion.api.throttle')
 
   local token_result = auth.get_token()
   if not token_result.token then
@@ -271,7 +279,11 @@ function M.append(parent_id, children, callback)
     children = children,
   }
 
-  client.patch('/blocks/' .. normalized_id .. '/children', token_result.token, body, function(response)
+  throttle.patch('/blocks/' .. normalized_id .. '/children', token_result.token, body, function(response)
+    if response.cancelled then
+      callback({ error = 'Request cancelled', blocks = {} })
+      return
+    end
     if response.error then
       callback({ error = response.error, blocks = {} })
       return
@@ -292,7 +304,7 @@ end
 ---@param callback fun(result: neotion.api.DeleteResult)
 function M.delete(block_id, callback)
   local auth = require('neotion.api.auth')
-  local client = require('neotion.api.client')
+  local throttle = require('neotion.api.throttle')
 
   local token_result = auth.get_token()
   if not token_result.token then
@@ -303,7 +315,11 @@ function M.delete(block_id, callback)
   local normalized_id = block_id:gsub('-', '')
 
   -- Notion API uses DELETE method to archive blocks
-  client.request('/blocks/' .. normalized_id, token_result.token, { method = 'DELETE' }, function(response)
+  throttle.request('/blocks/' .. normalized_id, token_result.token, { method = 'DELETE' }, function(response)
+    if response.cancelled then
+      callback({ error = 'Request cancelled' })
+      return
+    end
     if response.error then
       callback({ error = response.error })
       return

@@ -115,6 +115,48 @@ local function check_optional_deps()
   return all_ok
 end
 
+---@return boolean
+local function check_throttle()
+  local ok, throttle = pcall(require, 'neotion.api.throttle')
+  if not ok then
+    vim.health.error('Throttle module failed to load')
+    return false
+  end
+
+  local stats = throttle.get_stats()
+
+  -- Check queue health
+  if stats.queue_length > 50 then
+    vim.health.warn(string.format('Large request queue: %d pending', stats.queue_length))
+  elseif stats.queue_length > 0 then
+    vim.health.ok(string.format('Request queue: %d pending', stats.queue_length))
+  else
+    vim.health.ok('Request queue: empty')
+  end
+
+  -- Check rate limit status
+  if stats.paused then
+    vim.health.warn(
+      string.format('Rate limiter paused (%.1fs remaining)', stats.pause_remaining or 0),
+      { 'Notion API rate limit reached, requests will resume automatically' }
+    )
+  else
+    vim.health.ok(string.format('Rate limiter: %.1f tokens available (3/s refill)', stats.available_tokens))
+  end
+
+  -- Show statistics
+  vim.health.info(
+    string.format(
+      'Throttle stats: %d requests, %d retries, %d cancelled',
+      stats.total_requests,
+      stats.total_retries,
+      stats.total_cancelled
+    )
+  )
+
+  return true
+end
+
 ---Main health check function
 function M.check()
   vim.health.start('neotion.nvim')
@@ -126,6 +168,9 @@ function M.check()
 
   vim.health.start('Recommended')
   check_treesitter()
+
+  vim.health.start('Rate limiting')
+  check_throttle()
 
   vim.health.start('Optional integrations')
   check_optional_deps()

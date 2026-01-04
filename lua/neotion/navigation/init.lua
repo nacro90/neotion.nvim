@@ -88,6 +88,9 @@ function M.find_links_in_line(line)
       if meta.block_id then
         link.block_id = meta.block_id
       end
+      if meta.reason then
+        link.reason = meta.reason
+      end
     end
 
     table.insert(links, link)

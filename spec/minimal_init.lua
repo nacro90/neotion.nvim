@@ -34,6 +34,12 @@ vim.opt.writebackup = false
 vim.opt.showmode = false
 vim.opt.shortmess:append('I')
 
+-- Mock vim.ui.open to prevent browser opening during tests
+vim.ui.open = function(url)
+  -- Log instead of opening browser
+  vim.g._test_last_opened_url = url
+end
+
 -- Source plenary plugin to register commands
 if plenary_path then
   vim.cmd('source ' .. plenary_path .. '/plugin/plenary.vim')

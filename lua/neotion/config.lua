@@ -22,10 +22,18 @@
 ---@field confirm_sync? neotion.ConfirmSync When to ask for sync confirmation: 'always', 'on_ambiguity', 'never' (default: 'on_ambiguity')
 ---@field input? neotion.InputConfig Input system configuration (shortcuts and triggers)
 ---@field render? neotion.RenderUserConfig Render system configuration
+---@field throttle? neotion.ThrottleUserConfig Rate limiting configuration
 
 ---@class neotion.RenderUserConfig
 ---@field enabled? boolean Enable rendering (default: true)
 ---@field debounce_ms? integer Debounce delay for re-rendering in ms (default: 100)
+
+---@class neotion.ThrottleUserConfig
+---@field enabled? boolean Enable rate limiting (default: true)
+---@field tokens_per_second? number Token refill rate (default: 3)
+---@field burst_size? number Maximum burst tokens (default: 10)
+---@field max_retries? number Maximum retry attempts for 5xx errors (default: 3)
+---@field queue_warning_threshold? number Queue size to show in statusline (default: 5)
 
 ---@class neotion.Icons
 ---@field synced? string Icon for synced blocks (default: "✓")
@@ -76,10 +84,18 @@ vim.g.neotion = vim.g.neotion
 ---@field confirm_sync neotion.ConfirmSync
 ---@field input neotion.InternalInputConfig
 ---@field render neotion.InternalRenderConfig
+---@field throttle neotion.InternalThrottleConfig
 
 ---@class neotion.InternalRenderConfig
 ---@field enabled boolean
 ---@field debounce_ms integer
+
+---@class neotion.InternalThrottleConfig
+---@field enabled boolean
+---@field tokens_per_second number
+---@field burst_size number
+---@field max_retries number
+---@field queue_warning_threshold number
 
 ---@class neotion.InternalIcons
 ---@field synced string
@@ -157,6 +173,13 @@ local default_config = {
   render = {
     enabled = true,
     debounce_ms = 100, -- Debounce delay for re-rendering (0 = no debounce)
+  },
+  throttle = {
+    enabled = true,
+    tokens_per_second = 3, -- Notion API rate limit
+    burst_size = 10, -- Allow burst of requests
+    max_retries = 3, -- Retry on 5xx errors
+    queue_warning_threshold = 5, -- Show in statusline when queue > this
   },
 }
 
@@ -314,6 +337,44 @@ local function validate(opts)
     end
   end
 
+  -- Validate nested throttle table if provided
+  if opts.throttle then
+    local throttle_ok, throttle_err = pcall(vim.validate, {
+      ['throttle.enabled'] = { opts.throttle.enabled, { 'boolean', 'nil' }, 'boolean or nil' },
+      ['throttle.tokens_per_second'] = {
+        opts.throttle.tokens_per_second,
+        function(v)
+          return v == nil or (type(v) == 'number' and v >= 1 and v <= 10)
+        end,
+        'number between 1 and 10',
+      },
+      ['throttle.burst_size'] = {
+        opts.throttle.burst_size,
+        function(v)
+          return v == nil or (type(v) == 'number' and v >= 1 and v <= 100)
+        end,
+        'number between 1 and 100',
+      },
+      ['throttle.max_retries'] = {
+        opts.throttle.max_retries,
+        function(v)
+          return v == nil or (type(v) == 'number' and v >= 0 and v <= 10)
+        end,
+        'number between 0 and 10',
+      },
+      ['throttle.queue_warning_threshold'] = {
+        opts.throttle.queue_warning_threshold,
+        function(v)
+          return v == nil or (type(v) == 'number' and v >= 1 and v <= 100)
+        end,
+        'number between 1 and 100',
+      },
+    })
+    if not throttle_ok then
+      return false, throttle_err
+    end
+  end
+
   return true, nil
 end
 
@@ -348,6 +409,19 @@ local function ensure_initialized()
     if env_token and env_token ~= '' then
       config.api_token = env_token
     end
+  end
+
+  -- Initialize throttle module with user config (lazy require to avoid circular dependency)
+  if config.throttle and config.throttle.enabled then
+    vim.schedule(function()
+      local throttle = require('neotion.api.throttle')
+      throttle.setup({
+        tokens_per_second = config.throttle.tokens_per_second,
+        burst_size = config.throttle.burst_size,
+        max_retries = config.throttle.max_retries,
+        queue_warning_threshold = config.throttle.queue_warning_threshold,
+      })
+    end)
   end
 end
 

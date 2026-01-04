@@ -28,7 +28,7 @@ local M = {}
 ---@param callback fun(result: neotion.api.PageResult)
 function M.get(page_id, callback)
   local auth = require('neotion.api.auth')
-  local client = require('neotion.api.client')
+  local throttle = require('neotion.api.throttle')
 
   local token_result = auth.get_token()
   if not token_result.token then
@@ -39,7 +39,11 @@ function M.get(page_id, callback)
   -- Normalize page ID (remove dashes if present)
   local normalized_id = page_id:gsub('-', '')
 
-  client.get('/pages/' .. normalized_id, token_result.token, function(response)
+  throttle.get('/pages/' .. normalized_id, token_result.token, function(response)
+    if response.cancelled then
+      callback({ page = nil, error = 'Request cancelled' })
+      return
+    end
     if response.error then
       callback({ page = nil, error = response.error })
     else
@@ -53,7 +57,7 @@ end
 ---@param callback fun(result: neotion.api.PageListResult)
 function M.search(query, callback)
   local auth = require('neotion.api.auth')
-  local client = require('neotion.api.client')
+  local throttle = require('neotion.api.throttle')
 
   local token_result = auth.get_token()
   if not token_result.token then
@@ -70,7 +74,11 @@ function M.search(query, callback)
     body.query = query
   end
 
-  client.post('/search', token_result.token, body, function(response)
+  throttle.post('/search', token_result.token, body, function(response)
+    if response.cancelled then
+      callback({ pages = {}, has_more = false, error = 'Request cancelled' })
+      return
+    end
     if response.error then
       callback({ pages = {}, has_more = false, error = response.error })
       return

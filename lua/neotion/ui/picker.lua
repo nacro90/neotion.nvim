@@ -99,7 +99,136 @@ function M.page_to_item(page)
   }
 end
 
----Search and select using Telescope (async - opens immediately)
+---Check if live search is enabled in config
+---@return boolean
+local function is_live_search_enabled()
+  local ok, config = pcall(require, 'neotion.config')
+  if not ok then
+    return true -- Default to true
+  end
+  local cfg = config.get()
+  return cfg.search and cfg.search.live_search
+end
+
+---Search and select using Telescope with live search (debounce + cancel + hybrid display)
+---@param initial_query? string Initial search query
+---@param on_choice fun(item: neotion.ui.PickerItem|nil)
+local function search_telescope_live(initial_query, on_choice)
+  local pickers = require('telescope.pickers')
+  local finders = require('telescope.finders')
+  local conf = require('telescope.config').values
+  local actions = require('telescope.actions')
+  local action_state = require('telescope.actions.state')
+  local live_search = require('neotion.ui.live_search')
+
+  -- Use a unique instance ID (could use buffer number or counter)
+  local instance_id = vim.loop.hrtime()
+
+  local picker -- forward declaration
+
+  -- Create live search instance with callbacks
+  live_search.create(instance_id, {
+    on_results = function(items, is_final)
+      vim.schedule(function()
+        -- Check if picker is still valid
+        if not picker or not picker.prompt_bufnr or not vim.api.nvim_buf_is_valid(picker.prompt_bufnr) then
+          return
+        end
+
+        -- Show placeholder if no results
+        if #items == 0 then
+          local placeholder = is_final and { id = '', title = 'No pages found', icon = '📭' }
+            or { id = '', title = 'Searching...', icon = '🔍' }
+          picker:refresh(
+            finders.new_table({
+              results = { placeholder },
+              entry_maker = make_entry,
+            }),
+            { reset_prompt = false }
+          )
+          return
+        end
+
+        -- Refresh picker with results
+        picker:refresh(
+          finders.new_table({
+            results = items,
+            entry_maker = make_entry,
+          }),
+          { reset_prompt = false }
+        )
+      end)
+    end,
+    on_error = function(err)
+      vim.schedule(function()
+        if picker and picker.prompt_bufnr and vim.api.nvim_buf_is_valid(picker.prompt_bufnr) then
+          local error_item = { id = '', title = 'Error: ' .. err, icon = '❌' }
+          picker:refresh(
+            finders.new_table({
+              results = { error_item },
+              entry_maker = make_entry,
+            }),
+            { reset_prompt = false }
+          )
+        end
+      end)
+    end,
+  })
+
+  -- Create picker with loading placeholder
+  local loading_item = { id = '', title = 'Loading...', icon = '⏳' }
+  picker = pickers.new({}, {
+    prompt_title = 'Neotion Search',
+    finder = finders.new_table({
+      results = { loading_item },
+      entry_maker = make_entry,
+    }),
+    sorter = conf.generic_sorter({}),
+    attach_mappings = function(prompt_bufnr, map)
+      -- Watch for prompt changes (live search)
+      local last_prompt = ''
+      vim.api.nvim_create_autocmd({ 'TextChangedI', 'TextChanged' }, {
+        buffer = prompt_bufnr,
+        callback = function()
+          local current_prompt = action_state.get_current_line()
+          if current_prompt ~= last_prompt then
+            last_prompt = current_prompt
+            live_search.update_query(instance_id, current_prompt)
+          end
+        end,
+      })
+
+      -- Cleanup on close
+      actions.close:enhance({
+        post = function()
+          live_search.destroy(instance_id)
+        end,
+      })
+
+      -- Handle selection
+      actions.select_default:replace(function()
+        local selection = action_state.get_selected_entry()
+        actions.close(prompt_bufnr)
+        -- Don't select placeholder items
+        if selection and selection.value.id ~= '' then
+          on_choice(selection.value)
+        else
+          on_choice(nil)
+        end
+      end)
+
+      return true
+    end,
+  })
+
+  -- Open picker immediately
+  picker:find()
+
+  -- Trigger initial search
+  live_search.search_immediate(instance_id, initial_query or '')
+end
+
+---Search and select using Telescope (async - opens immediately, single query)
 ---@param query? string Search query
 ---@param on_choice fun(item: neotion.ui.PickerItem|nil)
 local function search_telescope(query, on_choice)
@@ -282,7 +411,11 @@ end
 ---@param on_choice fun(item: neotion.ui.PickerItem|nil)
 function M.search(query, on_choice)
   if has_telescope() then
-    search_telescope(query, on_choice)
+    if is_live_search_enabled() then
+      search_telescope_live(query, on_choice)
+    else
+      search_telescope(query, on_choice)
+    end
   else
     search_native(query, on_choice)
   end

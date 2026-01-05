@@ -23,6 +23,7 @@
 ---@field input? neotion.InputConfig Input system configuration (shortcuts and triggers)
 ---@field render? neotion.RenderUserConfig Render system configuration
 ---@field throttle? neotion.ThrottleUserConfig Rate limiting configuration
+---@field search? neotion.SearchConfig Search and picker configuration
 
 ---@class neotion.RenderUserConfig
 ---@field enabled? boolean Enable rendering (default: true)
@@ -67,6 +68,12 @@
 ---@class neotion.TriggersConfig
 ---@field enabled? boolean Enable trigger characters (default: false, future / and @ support)
 
+---@class neotion.SearchConfig
+---@field debounce_ms? integer Debounce delay for live search in ms (default: 300)
+---@field show_cached? boolean Show cached results instantly before API response (default: true)
+---@field live_search? boolean Enable live search in Telescope (default: true)
+---@field limit? integer Maximum number of results to show (default: 50)
+
 -- Allow vim.g.neotion to be set before plugin loads
 ---@type neotion.Config|fun():neotion.Config|nil
 vim.g.neotion = vim.g.neotion
@@ -85,6 +92,7 @@ vim.g.neotion = vim.g.neotion
 ---@field input neotion.InternalInputConfig
 ---@field render neotion.InternalRenderConfig
 ---@field throttle neotion.InternalThrottleConfig
+---@field search neotion.InternalSearchConfig
 
 ---@class neotion.InternalRenderConfig
 ---@field enabled boolean
@@ -128,6 +136,12 @@ vim.g.neotion = vim.g.neotion
 
 ---@class neotion.InternalTriggersConfig
 ---@field enabled boolean
+
+---@class neotion.InternalSearchConfig
+---@field debounce_ms integer
+---@field show_cached boolean
+---@field live_search boolean
+---@field limit integer
 
 local M = {}
 
@@ -180,6 +194,12 @@ local default_config = {
     burst_size = 10, -- Allow burst of requests
     max_retries = 3, -- Retry on 5xx errors
     queue_warning_threshold = 5, -- Show in statusline when queue > this
+  },
+  search = {
+    debounce_ms = 300, -- Debounce delay for live search
+    show_cached = true, -- Show cached results instantly
+    live_search = true, -- Enable live search in Telescope
+    limit = 50, -- Maximum results to show
   },
 }
 
@@ -372,6 +392,31 @@ local function validate(opts)
     })
     if not throttle_ok then
       return false, throttle_err
+    end
+  end
+
+  -- Validate nested search table if provided
+  if opts.search then
+    local search_ok, search_err = pcall(vim.validate, {
+      ['search.debounce_ms'] = {
+        opts.search.debounce_ms,
+        function(v)
+          return v == nil or (type(v) == 'number' and v >= 0 and v <= 5000)
+        end,
+        'number between 0 and 5000',
+      },
+      ['search.show_cached'] = { opts.search.show_cached, { 'boolean', 'nil' }, 'boolean or nil' },
+      ['search.live_search'] = { opts.search.live_search, { 'boolean', 'nil' }, 'boolean or nil' },
+      ['search.limit'] = {
+        opts.search.limit,
+        function(v)
+          return v == nil or (type(v) == 'number' and v >= 1 and v <= 200)
+        end,
+        'number between 1 and 200',
+      },
+    })
+    if not search_ok then
+      return false, search_err
     end
   end
 

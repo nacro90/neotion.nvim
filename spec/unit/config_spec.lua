@@ -199,4 +199,88 @@ describe('neotion.config', function()
       assert.equals(2000, cfg.sync_interval)
     end)
   end)
+
+  describe('search config', function()
+    it('should have sensible defaults', function()
+      local cfg = config.get()
+      assert.is_table(cfg.search)
+      assert.equals(300, cfg.search.debounce_ms)
+      assert.is_true(cfg.search.show_cached)
+      assert.is_true(cfg.search.live_search)
+      assert.equals(50, cfg.search.limit)
+    end)
+
+    it('should accept valid search config', function()
+      local ok, err = config.validate({
+        search = {
+          debounce_ms = 500,
+          show_cached = false,
+          live_search = true,
+          limit = 100,
+        },
+      })
+      assert.is_true(ok)
+      assert.is_nil(err)
+    end)
+
+    it('should accept zero debounce_ms', function()
+      local ok, err = config.validate({
+        search = { debounce_ms = 0 },
+      })
+      assert.is_true(ok)
+      assert.is_nil(err)
+    end)
+
+    it('should reject negative debounce_ms', function()
+      local ok, err = config.validate({
+        search = { debounce_ms = -1 },
+      })
+      assert.is_false(ok)
+      assert.is_not_nil(err)
+    end)
+
+    it('should reject debounce_ms above maximum', function()
+      local ok, err = config.validate({
+        search = { debounce_ms = 6000 },
+      })
+      assert.is_false(ok)
+      assert.is_not_nil(err)
+    end)
+
+    it('should reject invalid show_cached type', function()
+      local ok, err = config.validate({
+        search = { show_cached = 'yes' },
+      })
+      assert.is_false(ok)
+      assert.is_not_nil(err)
+    end)
+
+    it('should reject limit below minimum', function()
+      local ok, err = config.validate({
+        search = { limit = 0 },
+      })
+      assert.is_false(ok)
+      assert.is_not_nil(err)
+    end)
+
+    it('should reject limit above maximum', function()
+      local ok, err = config.validate({
+        search = { limit = 300 },
+      })
+      assert.is_false(ok)
+      assert.is_not_nil(err)
+    end)
+
+    it('should merge search config with defaults', function()
+      local ok, _ = config.setup({
+        search = { debounce_ms = 500 },
+      })
+      assert.is_true(ok)
+
+      local cfg = config.get()
+      assert.equals(500, cfg.search.debounce_ms)
+      assert.is_true(cfg.search.show_cached) -- default preserved
+      assert.equals(50, cfg.search.limit) -- default preserved
+    end)
+  end)
 end)

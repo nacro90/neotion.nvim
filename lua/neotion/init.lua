@@ -77,14 +77,27 @@ function M.open(page_id)
   local bufnr, is_new = buffer.create(page_id)
   buffer.open(bufnr)
 
-  -- Check if already loading (prevent race condition on repeated calls)
-  -- Only check for existing buffers, new buffers always need to load
-  if not is_new and buffer.is_loading(bufnr) then
-    vim.notify('[neotion] Page is already loading', vim.log.levels.INFO)
-    return
+  -- If buffer already exists and is ready, don't reload - just show it
+  if not is_new then
+    local status = buffer.get_status(bufnr)
+    if status == 'loading' then
+      vim.notify('[neotion] Page is already loading', vim.log.levels.INFO)
+      return
+    elseif status == 'ready' then
+      -- Buffer already has content, no need to reload
+      local data = buffer.get_data(bufnr)
+      if data then
+        vim.notify('[neotion] ' .. data.page_title, vim.log.levels.INFO)
+      end
+      return
+    elseif status == 'syncing' then
+      vim.notify('[neotion] Sync in progress, please wait', vim.log.levels.INFO)
+      return
+    end
+    -- If status is 'error' or 'modified', allow reload
   end
 
-  -- Set loading state (already set for new buffers, but explicit is clearer)
+  -- Set loading state and show placeholder
   buffer.set_status(bufnr, 'loading')
   buffer.set_content(bufnr, { 'Loading...' })
 

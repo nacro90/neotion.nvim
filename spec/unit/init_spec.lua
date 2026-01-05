@@ -80,6 +80,131 @@ describe('neotion', function()
     end)
   end)
 
+  describe('buffer reopen behavior', function()
+    local buffer
+
+    before_each(function()
+      package.loaded['neotion.buffer'] = nil
+      buffer = require('neotion.buffer')
+    end)
+
+    after_each(function()
+      -- Clean up neotion buffers
+      for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+        local name = vim.api.nvim_buf_get_name(bufnr)
+        if name:match('neotion://') then
+          vim.api.nvim_buf_delete(bufnr, { force = true })
+        end
+      end
+    end)
+
+    it('should not reload buffer when status is ready', function()
+      local page_id = 'a1b2c3d4e5f6789012345678abcdef00'
+      local bufnr = buffer.create(page_id)
+
+      -- Simulate loaded state
+      buffer.set_content(bufnr, { '# Test Page', '', 'Content' })
+      buffer.set_status(bufnr, 'ready')
+      buffer.update_data(bufnr, { page_title = 'Test Page' })
+
+      -- Store original content
+      local original_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+      -- Open the same page again
+      neotion.open(page_id)
+
+      -- Content should be preserved (not "Loading...")
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.same(original_lines, lines)
+      assert.are_not.equal('Loading...', lines[1])
+    end)
+
+    it('should allow reload when status is error', function()
+      local page_id = 'a1b2c3d4e5f6789012345678abcdef01'
+      local bufnr = buffer.create(page_id)
+
+      -- Simulate error state with specific content
+      buffer.set_content(bufnr, { 'Error: Something went wrong' })
+      buffer.set_status(bufnr, 'error')
+
+      -- Track if content was changed (reload was attempted)
+      local original_content = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+      -- Open the same page again - should trigger reload
+      neotion.open(page_id)
+
+      -- Content should have changed (either to Loading... or new error)
+      -- The important thing is that reload was attempted, not blocked
+      local new_content = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      -- Content should be different from original error message
+      assert.are_not.same(original_content, new_content)
+    end)
+
+    it('should not double-load when already loading', function()
+      local page_id = 'a1b2c3d4e5f6789012345678abcdef02'
+      local bufnr = buffer.create(page_id)
+
+      -- Buffer starts in loading state
+      assert.are.equal('loading', buffer.get_status(bufnr))
+
+      -- Capture notifications
+      local notifications = {}
+      local old_notify = vim.notify
+      vim.notify = function(msg, level)
+        table.insert(notifications, { msg = msg, level = level })
+      end
+
+      -- Try to open again
+      neotion.open(page_id)
+
+      vim.notify = old_notify
+
+      -- Should have notified that page is already loading
+      local found_loading_msg = false
+      for _, notif in ipairs(notifications) do
+        if notif.msg:match('already loading') then
+          found_loading_msg = true
+        end
+      end
+      assert.is_true(found_loading_msg)
+    end)
+  end)
+
+  describe('loading state protection', function()
+    local buffer
+
+    before_each(function()
+      package.loaded['neotion.buffer'] = nil
+      buffer = require('neotion.buffer')
+    end)
+
+    after_each(function()
+      -- Clean up neotion buffers
+      for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+        local name = vim.api.nvim_buf_get_name(bufnr)
+        if name:match('neotion://') then
+          vim.api.nvim_buf_delete(bufnr, { force = true })
+        end
+      end
+    end)
+
+    it('buffer should start in loading state', function()
+      local page_id = 'a1b2c3d4e5f6789012345678abcdef03'
+      local bufnr = buffer.create(page_id)
+
+      assert.are.equal('loading', buffer.get_status(bufnr))
+    end)
+
+    it('should transition from loading to ready', function()
+      local page_id = 'a1b2c3d4e5f6789012345678abcdef04'
+      local bufnr = buffer.create(page_id)
+
+      buffer.set_status(bufnr, 'ready')
+
+      assert.are.equal('ready', buffer.get_status(bufnr))
+    end)
+  end)
+
   describe('page_id validation', function()
     local notify_messages = {}
 

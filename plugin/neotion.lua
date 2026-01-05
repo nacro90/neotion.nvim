@@ -420,6 +420,18 @@ vim.api.nvim_set_hl(0, 'NeotionReadOnly', { bg = '#2a2a2a', italic = true, defau
 vim.api.nvim_create_autocmd('BufWriteCmd', {
   pattern = 'neotion://*',
   callback = function(args)
+    local buffer = require('neotion.buffer')
+    local status = buffer.get_status(args.buf)
+
+    -- Don't allow push during loading or syncing state
+    if status == 'loading' then
+      vim.notify('[neotion] Page is still loading', vim.log.levels.WARN)
+      return
+    elseif status == 'syncing' then
+      vim.notify('[neotion] Sync already in progress', vim.log.levels.WARN)
+      return
+    end
+
     local sync = require('neotion.sync')
     sync.push(args.buf)
   end,
@@ -433,6 +445,12 @@ vim.api.nvim_create_autocmd({ 'TextChanged', 'TextChangedI' }, {
     local bufnr = args.buf
     local buffer = require('neotion.buffer')
     local model = require('neotion.model')
+
+    -- Skip if buffer is in loading or syncing state
+    local status = buffer.get_status(bufnr)
+    if status == 'loading' or status == 'syncing' then
+      return
+    end
 
     -- Only track if buffer has blocks
     if not model.has_blocks(bufnr) then

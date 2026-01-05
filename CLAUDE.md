@@ -818,10 +818,12 @@ CREATE TABLE sync_queue (
 
 ---
 
-### Phase 8: Live Search + Search Cache
+### Phase 8: Live Search + Search Cache ✅ COMPLETE
 **Goal:** Real-time Telescope search with search-driven caching
 
 **Complexity:** M (Medium)
+
+**Completion:** Phase 8.1 (search cache) ve Phase 8.2 (live Telescope) tamamlandı.
 
 **Rationale:** Hızlı sayfa arama ve cache'i organik olarak doldurma.
 
@@ -925,18 +927,151 @@ search = {
 **Dependencies:** Phase 6 (rate limiting + cancel), Phase 7 (SQLite cache)
 
 **Checklist:**
-- [ ] Phase 8.1a: `search_with_id()` in pages.lua
-- [ ] Phase 8.1b: Frecency calculation + `search_cached()` in cache/pages.lua
-- [ ] Phase 8.1c: Eviction logic (`maybe_evict()`)
-- [ ] Phase 8.1d: `save_pages_batch()` + `increment_open_count()`
-- [ ] Phase 8.2a: `live_search.lua` - debounce + cancel
-- [ ] Phase 8.2b: Telescope integration with hybrid display
-- [ ] Phase 8.2c: vim.ui.select fallback (simple, no live)
-- [ ] Unit tests for all modules
+- [x] Phase 8.1a: `search_with_cancel()` in pages.lua (41 tests)
+- [x] Phase 8.1b: Frecency calculation + `M.search()` in cache/pages.lua
+- [x] Phase 8.1c: Eviction logic (`maybe_evict()`)
+- [x] Phase 8.1d: `save_pages_batch()` + `update_open_stats()`
+- [x] Phase 8.2a: `live_search.lua` - debounce + cancel + merge (41 tests)
+- [x] Phase 8.2b: Telescope integration with hybrid display
+- [x] Phase 8.2c: vim.ui.select fallback (simple, no live) - preserved
+- [x] Config extension: `search.debounce_ms`, `search.show_cached`, `search.live_search`, `search.limit`
+- [x] Unit tests for all modules (1135 total tests)
 
 **NOT in Phase 8 (Deferred):**
-- `[[` link completion → Phase 8.3
+- `[[` link completion → Phase 8.4
 - `/` slash commands → Phase 9 (higher priority than `[[`)
+
+---
+
+### Phase 8.3: Query-Based Response Caching ✅ COMPLETE
+**Goal:** Search açıldığında instant sonuç, "local hissiyat"
+
+**Complexity:** M (Medium)
+
+**Problem Statement:**
+Mevcut live search çalışıyor ama UX sorunları var:
+- Search açıldığında "Loading..." görünüyor (300-500ms)
+- Cached results frecency sıralı, Notion sıralaması korunmuyor
+- Her query API'ye gidiyor, daha önce aranan query'ler cache'lenmemiş
+
+**Core Idea: Query → Response Cache**
+Her benzersiz query string için API response'unu (page_ids[] sıralı) cache'le.
+
+**Architecture: Two-Tier Cache**
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Query Cache Layers                       │
+├─────────────────────────────────────────────────────────────┤
+│   Tier 1: In-Memory LRU (session, 100 entries)              │
+│           0ms latency, volatile                              │
+│                     ↓ miss                                   │
+│   Tier 2: SQLite query_cache table (500 entries)            │
+│           ~1ms latency, persistent                           │
+│                     ↓ miss                                   │
+│   Tier 3: Frecency Search (existing pages table)            │
+│           Fallback for unknown queries                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**New SQLite Table:**
+```sql
+CREATE TABLE query_cache (
+  query TEXT PRIMARY KEY,        -- Normalized (lowercase, trimmed)
+  page_ids TEXT NOT NULL,        -- JSON array, Notion order preserved
+  result_count INTEGER NOT NULL,
+  cached_at INTEGER NOT NULL,
+  hit_count INTEGER DEFAULT 0,
+  last_hit_at INTEGER
+);
+```
+
+**Query Flow:**
+```
+User opens picker → show cached "" instantly → bg refresh
+User types "t"    → show cached "t" OR prefix fallback "→" → bg refresh
+User types "te"   → show cached "te" OR filter "t" results → bg refresh
+API returns       → cache response → merge & display
+```
+
+**Prefix Fallback Strategy:**
+- "tes" cache miss → try "te" → try "t" → frecency fallback
+- Client-side filter cached results by new query
+- Instant feedback even for new queries
+
+**UX State Machine:**
+```
+STATES: EMPTY → CACHED → REFRESHING → FRESH / ERROR
+
+Visual Indicators (subtle, right-aligned):
+- ◌ refreshing  → Background fetch active
+- ! offline     → Network error, showing stale
+- (new)         → Item appeared in fresh results
+- "2h ago"      → Staleness indicator
+```
+
+**Merge Strategy:**
+- Selection preserved on refresh (no jarring jumps)
+- New items marked with (new) badge (3s)
+- Stale items kept if user has them selected
+
+**Config Additions:**
+```lua
+search = {
+  -- Existing
+  debounce_ms = 300,
+  show_cached = true,
+  live_search = true,
+  limit = 100,
+  -- NEW
+  query_cache = {
+    enabled = true,
+    memory_size = 100,       -- In-memory LRU max entries
+    sqlite_size = 500,       -- SQLite max entries
+    freshness_ttl = 300,     -- Fresh for 5 minutes
+    stale_ttl = 86400,       -- Keep stale for 24 hours
+  },
+  show_staleness = true,     -- Show "2h ago" indicators
+  parent_query_fallback = true, -- Use "te" cache for "tes"
+},
+```
+
+**New Files:**
+```
+lua/neotion/cache/
+└── query_cache.lua          # Two-tier query→response cache
+```
+
+**Modified Files:**
+- `cache/schema.lua` - Add query_cache table, migration
+- `ui/live_search.lua` - Use query cache in fetch_cached()
+- `ui/picker.lua` - Add staleness indicators, merge strategy
+- `config.lua` - New options
+
+**Checklist:**
+- [x] Schema: Add `query_cache` table to schema.lua (V2 migration)
+- [x] Cache: Create `cache/query_cache.lua` (SQLite only, no in-memory LRU)
+- [x] Integration: Modify `live_search.fetch_cached()` to use query cache
+- [x] Integration: Save API responses to query cache
+- [x] UX: Prefix fallback strategy
+- [x] UX: Empty query shows recent pages (frecency)
+- [x] Config: Add `query_cache_size` option (default: 500)
+- [x] Tests: 31 unit tests for query_cache module
+- [ ] UX: Staleness indicators in picker (deferred - low value)
+- [ ] UX: Selection-preserving merge (deferred - needs Telescope investigation)
+
+**Implementation Steps:**
+| Step | Task | Complexity |
+|------|------|------------|
+| 1 | Add query_cache table to schema.lua | S |
+| 2 | Create query_cache.lua with in-memory cache | M |
+| 3 | Add SQLite persistence | M |
+| 4 | Modify live_search.fetch_cached() | S |
+| 5 | Modify API response handler to cache | S |
+| 6 | Add prefix fallback | S |
+| 7 | Add UX indicators | M |
+| 8 | Write tests | M |
+
+**Estimated: 4-6 hours**
 
 ---
 
@@ -1158,22 +1293,27 @@ vim.g.neotion = vim.g.neotion
 - [x] **Testing:** 800+ test geçiyor
 - [x] **Compatibility:** Lua 5.1 API
 
-## Sonraki Adım: Phase 8.1
+## Sonraki Adım: Phase 8.4
 
-Phase 7 (SQLite Cache + Sync State) tamamlandı. Şimdi:
-- **Phase 8.1:** Search cache layer - frecency, eviction, search_cached
-- **Phase 8.2:** Live Telescope search - debounce, cancel, hybrid display
+Phase 8.3 (Query-Based Response Caching) tamamlandı. Search artık instant:
+- Query cache ile Notion sıralaması korunuyor
+- Prefix fallback ("tes" → "te" → "t")
+- Empty query = recent pages (frecency)
+- Auto-eviction (500 entry limit)
 
-**Phase 8 Yaklaşımı: Search-Driven Cache**
-- Arama yapıldıkça cache dolacak (önceden fetch yok)
-- Frecency: `score = open_count * 10 + time_decay(30 gün)`
-- Cache limit: 1000 pages, eviction by lowest frecency
-- Hybrid display: cached first (instant) → API results (merged)
+Şimdi:
+- **Phase 8.4:** `[[` link completion - sayfa içi link ekleme
+
+**Phase 8 Özeti (Complete):**
+- 8.1: Search cache layer ✅
+- 8.2: Live Telescope search ✅
+- 8.3: Query-based response caching ✅
 
 **Known Limitations:**
 - Block links (`notion://block/id`) are not supported yet
 - Nested list items (indentation) deferred to Phase 5.10
 - Auto-continuation (Enter after list item adds prefix) deferred to Phase 5.9
+- **BUG (Phase 5.8):** `- text` and `| text` prefix conversion not working - detection.lua works but conversion may not trigger during sync. Needs debugging with log output.
 
 ## Roadmap Summary
 
@@ -1186,17 +1326,17 @@ Phase 7 (SQLite Cache + Sync State) tamamlandı. Şimdi:
 | 5.10 | Nested blocks (indentation) | M | TODO |
 | 6 | Rate Limiting | M | ✅ COMPLETE |
 | 7.1-7.3 | SQLite Cache + Sync State | L | ✅ COMPLETE |
-| 8.1 | Search Cache Layer (frecency, eviction) | M | 🔜 NEXT |
-| 8.2 | Live Telescope Search | M | TODO |
-| 8.3 | `[[` Link Completion | S | TODO |
+| 8.1-8.2 | Live Search + Frecency Cache | M | ✅ COMPLETE |
+| 8.3 | Query-Based Response Caching | M | ✅ COMPLETE |
+| 8.4 | `[[` Link Completion | S | 🔜 NEXT |
 | 9 | `/` Slash Commands | L | TODO |
 | 10 | Full Lossless + Polish | L | TODO |
 
 **Dependency Graph:**
 ```
-7.3 → 8.1 → 8.2 → 8.3
-              ↓
-              9 (/ slash commands, higher priority than [[)
+7.3 → 8.1 → 8.2 → 8.3 → 8.4
+                         ↓
+                    9 (/ slash commands)
 ```
 
 **Removed from Scope:** Daily notes, templates, database views (focused editor first)

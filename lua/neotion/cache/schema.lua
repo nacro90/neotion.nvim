@@ -5,7 +5,7 @@ local M = {}
 
 --- Current schema version
 --- Increment this when making schema changes
-M.VERSION = 1
+M.VERSION = 2
 
 --- Table creation statements
 M.TABLES = {
@@ -80,6 +80,15 @@ M.TABLES = {
       FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
     )
   ]],
+
+  query_cache = [[
+    CREATE TABLE IF NOT EXISTS query_cache (
+      query TEXT PRIMARY KEY,
+      page_ids TEXT NOT NULL,
+      result_count INTEGER NOT NULL,
+      cached_at INTEGER NOT NULL
+    )
+  ]],
 }
 
 --- Index creation statements
@@ -89,6 +98,7 @@ M.INDEXES = {
   'CREATE INDEX IF NOT EXISTS idx_pages_deleted ON pages(is_deleted)',
   'CREATE INDEX IF NOT EXISTS idx_block_hashes_page_id ON block_hashes(page_id)',
   'CREATE INDEX IF NOT EXISTS idx_sync_queue_priority ON sync_queue(priority DESC, created_at ASC)',
+  'CREATE INDEX IF NOT EXISTS idx_query_cache_cached_at ON query_cache(cached_at ASC)',
 }
 
 --- Table creation order (respects foreign key dependencies)
@@ -99,6 +109,7 @@ local TABLE_ORDER = {
   'block_hashes',
   'sync_state',
   'sync_queue',
+  'query_cache',
 }
 
 --- Get all schema creation statements in correct order
@@ -124,9 +135,18 @@ end
 ---@type table<integer, string[]>
 local MIGRATIONS = {
   -- Version 1 is initial schema, no migration needed
-  -- [2] = {
-  --   'ALTER TABLE pages ADD COLUMN new_field TEXT',
-  -- },
+  -- Version 2: Add query_cache table for search response caching
+  [2] = {
+    [[
+      CREATE TABLE IF NOT EXISTS query_cache (
+        query TEXT PRIMARY KEY,
+        page_ids TEXT NOT NULL,
+        result_count INTEGER NOT NULL,
+        cached_at INTEGER NOT NULL
+      )
+    ]],
+    'CREATE INDEX IF NOT EXISTS idx_query_cache_cached_at ON query_cache(cached_at ASC)',
+  },
 }
 
 --- Get migration statements for a specific version

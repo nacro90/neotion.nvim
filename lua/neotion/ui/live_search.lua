@@ -3,6 +3,9 @@
 ---Handles debouncing, cancellation, and result merging for Telescope integration
 ---@brief ]]
 
+local log_module = require('neotion.log')
+local log = log_module.get_logger('ui.live_search')
+
 ---@class neotion.PageItem
 ---@field id string Page ID (32 hex chars)
 ---@field title string Page title
@@ -285,23 +288,83 @@ local function cancel_api_request(state)
   state.request_id = nil
 end
 
+--- Convert page IDs to PageItems by looking up page metadata
+---@param page_ids string[]
+---@param limit integer
+---@return neotion.PageItem[]
+local function page_ids_to_items(page_ids, limit)
+  local ok, cache_pages = pcall(require, 'neotion.cache.pages')
+  if not ok then
+    return {}
+  end
+
+  local items = {}
+  for i, page_id in ipairs(page_ids) do
+    if i > limit then
+      break
+    end
+    local page_data = cache_pages.get_page(page_id)
+    if page_data then
+      table.insert(items, M.cached_row_to_item(page_data))
+    end
+  end
+  return items
+end
+
 --- Fetch cached results
+--- Strategy:
+--- 1. Empty query -> recent pages (frecency sorted)
+--- 2. query_cache first (preserves Notion order)
+--- 3. frecency fallback (for queries not yet in cache)
 ---@param query string
 ---@param limit integer
 ---@return neotion.PageItem[]
 local function fetch_cached(query, limit)
   -- Use mock if set (for testing)
   if mock_cache_fetcher then
-    return mock_cache_fetcher(query, limit) or {}
+    local results = mock_cache_fetcher(query, limit) or {}
+    log.debug('Cache fetch (mock)', { query = query, count = #results })
+    return results
   end
 
-  -- Real implementation using cache module
   local ok, cache_pages = pcall(require, 'neotion.cache.pages')
   if not ok then
+    log.debug('Cache module not available')
     return {}
   end
 
+  -- Empty query: show recent pages (frecency sorted)
+  local normalized_query = (query or ''):match('^%s*(.-)%s*$') or ''
+  if normalized_query == '' then
+    local rows = cache_pages.get_recent(limit)
+    log.debug('Empty query - showing recent pages', { count = #rows })
+    local items = {}
+    for _, row in ipairs(rows) do
+      table.insert(items, M.cached_row_to_item(row))
+    end
+    return items
+  end
+
+  -- Try query cache first (preserves Notion's relevance order)
+  local qc_ok, query_cache = pcall(require, 'neotion.cache.query_cache')
+  if qc_ok then
+    local cached_query = query_cache.get_with_prefix_fallback(query)
+    if cached_query then
+      local items = page_ids_to_items(cached_query.page_ids, limit)
+      log.debug('Query cache hit', {
+        query = query,
+        matched = cached_query.matched_query,
+        is_fallback = cached_query.is_fallback,
+        count = #items,
+      })
+      return items
+    end
+  end
+
+  -- Fallback to frecency-based search (for queries not yet in cache)
   local rows = cache_pages.search(query, limit)
+  log.debug('Frecency cache search', { query = query, count = #rows, limit = limit })
+
   local items = {}
   for _, row in ipairs(rows) do
     table.insert(items, M.cached_row_to_item(row))
@@ -344,7 +407,28 @@ local function start_api_search(state, query)
     -- Merge with cached results
     local merged = M.merge_results(api_items, state.cached_results)
 
-    -- TODO (Phase 8.3): Save search results to cache (save_pages_batch)
+    -- Save API results to cache for future searches
+    if result.pages and #result.pages > 0 then
+      -- Save page metadata to pages cache
+      local cache_ok, cache_pages = pcall(require, 'neotion.cache.pages')
+      if cache_ok then
+        local saved = cache_pages.save_pages_batch(result.pages)
+        log.debug('Saved API results to pages cache', { count = saved })
+      end
+
+      -- Save query->page_ids mapping to query cache (preserves Notion order)
+      local qc_ok, query_cache_mod = pcall(require, 'neotion.cache.query_cache')
+      if qc_ok then
+        local page_ids = {}
+        for _, page in ipairs(result.pages) do
+          table.insert(page_ids, page.id)
+        end
+        query_cache_mod.set(query, page_ids)
+        log.debug('Saved query to query cache', { query = query, count = #page_ids })
+      end
+    end
+
+    log.debug('API search complete', { api_count = #api_items, merged_count = #merged })
 
     -- Call callback with final results
     state.callbacks.on_results(merged, true)

@@ -116,7 +116,7 @@ end
 local function search_telescope_live(initial_query, on_choice)
   local pickers = require('telescope.pickers')
   local finders = require('telescope.finders')
-  local conf = require('telescope.config').values
+  local sorters = require('telescope.sorters')
   local actions = require('telescope.actions')
   local action_state = require('telescope.actions.state')
   local live_search = require('neotion.ui.live_search')
@@ -183,7 +183,9 @@ local function search_telescope_live(initial_query, on_choice)
       results = { loading_item },
       entry_maker = make_entry,
     }),
-    sorter = conf.generic_sorter({}),
+    -- IMPORTANT: Use empty sorter to disable Telescope filtering
+    -- Our results are already filtered/sorted by API and cache frecency
+    sorter = sorters.empty(),
     attach_mappings = function(prompt_bufnr, map)
       -- Watch for prompt changes (live search)
       local last_prompt = ''

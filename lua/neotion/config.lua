@@ -73,6 +73,7 @@
 ---@field show_cached? boolean Show cached results instantly before API response (default: true)
 ---@field live_search? boolean Enable live search in Telescope (default: true)
 ---@field limit? integer Maximum number of results to show (default: 50)
+---@field query_cache_size? integer Maximum number of query cache entries (default: 500)
 
 -- Allow vim.g.neotion to be set before plugin loads
 ---@type neotion.Config|fun():neotion.Config|nil
@@ -142,6 +143,7 @@ vim.g.neotion = vim.g.neotion
 ---@field show_cached boolean
 ---@field live_search boolean
 ---@field limit integer
+---@field query_cache_size integer
 
 local M = {}
 
@@ -199,7 +201,8 @@ local default_config = {
     debounce_ms = 300, -- Debounce delay for live search
     show_cached = true, -- Show cached results instantly
     live_search = true, -- Enable live search in Telescope
-    limit = 50, -- Maximum results to show
+    limit = 100, -- Maximum results to show (Notion API returns max 100)
+    query_cache_size = 500, -- Maximum query cache entries
   },
 }
 

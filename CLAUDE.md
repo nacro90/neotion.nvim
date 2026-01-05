@@ -1315,6 +1315,105 @@ Phase 8.3 (Query-Based Response Caching) tamamlandı. Search artık instant:
 - Auto-continuation (Enter after list item adds prefix) deferred to Phase 5.9
 - **BUG (Phase 5.8):** `- text` and `| text` prefix conversion not working - detection.lua works but conversion may not trigger during sync. Needs debugging with log output.
 
+---
+
+## Critical Cache Issues (Phase 8.4 öncesi çözülmeli)
+
+### Issue 1: Page Content Cache Session Sonrası Çalışmıyor
+
+**Semptom:** Note session içinde cache'den açılıyor ama Neovim kapatıp açınca "Loading..." olarak açılıyor.
+
+**Beklenen Davranış:**
+1. Note açıldığında önce cache'den içerik gösterilmeli (instant)
+2. Arka planda API'den taze veri çekilmeli
+3. Değişiklik varsa güncellenmeli
+4. Cache ömür boyu kalmalı (kalıcı SQLite)
+
+**Olası Nedenler:**
+- `cache.is_initialized()` her session'da false dönüyor olabilir
+- SQLite path sorunu (farklı path'e yazıyor olabilir)
+- Cache init otomatik çağrılmıyor olabilir
+
+**Debug Adımları:**
+1. `:Neotion log level DEBUG` ve log dosyasını kontrol et
+2. `:Neotion cache path` ile cache dosyasının varlığını kontrol et
+3. `cache.is_available()` ve `cache.is_initialized()` değerlerini logla
+
+**Çözüm Yaklaşımı:**
+```lua
+-- init.lua M.open() içinde:
+-- 1. Cache'i her zaman önce init et
+-- 2. Cache'den oku (varsa instant göster)
+-- 3. API'ye paralel istek at
+-- 4. API dönünce karşılaştır ve güncelle
+```
+
+---
+
+### Issue 2: Empty Query Alakasız Sonuçlar Gösteriyor
+
+**Semptom:** Telescope search boş açıldığında frecency sonuçları geliyor, API sonuçlarından farklı.
+
+**Mevcut Davranış:**
+- Empty query → `cache_pages.get_recent()` (frecency sorted, kullanıcının açtığı sayfalar)
+- API'ye istek atılıyor ama sonuç query_cache'e kaydedilmiyor (empty query skip)
+
+**Beklenen Davranış:**
+1. Empty query ("") de query_cache'e kaydedilmeli
+2. Search açıldığında önce query_cache'den "" sonuçları gösterilmeli
+3. Paralelde API'ye "" query ile istek atılmalı
+4. API dönünce sonuçlar güncellenmeli ve cache'e kaydedilmeli
+5. Ayrı state/gösterim olmadan, doğrudan: cache → API → merge
+
+**Kök Neden:**
+`query_cache.lua` satır 41-43:
+```lua
+if normalized == '' then
+  return false  -- Empty query skip ediliyor!
+end
+```
+
+**Çözüm Yaklaşımı:**
+```lua
+-- 1. query_cache.lua: Empty query'yi de kaydet
+-- 2. live_search.lua fetch_cached():
+--    - Empty query için de query_cache.get('') dene
+--    - Miss ise get_recent() fallback (ilk açılış için)
+-- 3. start_api_search(): Empty query sonuçlarını da cache'le
+
+-- Akış:
+-- Search açıldı (query='')
+--   → query_cache.get('') -- varsa cache'den göster
+--   → (miss) get_recent() -- ilk açılış fallback
+--   → API search('')
+--   → query_cache.set('', page_ids) -- kaydet
+--   → merge & display
+```
+
+---
+
+### Genel Cache Felsefesi
+
+**Prensip:** "Cache-first, background refresh"
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Instant UX Pattern                       │
+├─────────────────────────────────────────────────────────────┤
+│   1. Kullanıcı aksiyon alır (open page, search, etc.)       │
+│   2. Cache'den anında göster (0ms latency)                  │
+│   3. Arka planda API'ye istek at                            │
+│   4. API dönünce karşılaştır                                │
+│   5. Değişiklik varsa güncelle + yeni cache'e kaydet        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Amacımız:**
+- Hızlı gösterim (instant)
+- Hızlı aksiyon (kullanıcı beklemeden seçim yapabilmeli)
+- API call'ların bizi yavaşlatmasını önlemek
+- Network olmasa bile çalışabilmek (offline-first)
+
 ## Roadmap Summary
 
 | Phase | Goal | Complexity | Status |

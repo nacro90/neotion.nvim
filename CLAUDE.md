@@ -802,13 +802,18 @@ CREATE TABLE sync_queue (
 **Dependencies:** Phase 6 (rate limiting for background refresh)
 
 **Checklist:**
-- [ ] SQLite schema design
-- [ ] Page metadata CRUD operations
+- [x] SQLite schema design (Phase 7.1)
+- [x] Page metadata CRUD operations (Phase 7.2)
+- [x] Page content caching with JSON serialization (Phase 7.2)
+- [x] Cache-first loading in M.open() (Phase 7.2)
+- [x] Health check for cache status (Phase 7.2)
 - [ ] Sync state persistence
 - [ ] Background refresh with rate limiting
 - [ ] TTL-based cache invalidation
-- [ ] Integration with `api/pages.lua` (cache fallback)
-- [ ] Unit tests for cache modules
+- [x] Unit tests for cache modules (17 integration tests)
+
+**Phase 7.1 (Complete):** SQLite infrastructure - db.lua, schema.lua, hash.lua
+**Phase 7.2 (Complete):** Page content caching - pages.lua, cache-first loading
 
 ---
 
@@ -1069,9 +1074,11 @@ vim.g.neotion = vim.g.neotion
 - [x] **Testing:** 800+ test geçiyor
 - [x] **Compatibility:** Lua 5.1 API
 
-## Sonraki Adım: Phase 7 (SQLite Cache)
+## Sonraki Adım: Phase 7.3 veya Phase 8
 
-Phase 5.8 tamamlandı. Sırada Phase 7 var (Phase 6 zaten tamamlandı).
+Phase 7.2 (Page content caching) tamamlandı. Seçenekler:
+- **Phase 7.3:** Sync state persistence, background refresh, TTL invalidation
+- **Phase 8:** Live search + `[[` completion (cache altyapısı hazır)
 
 **Known Limitations:**
 - Block links (`notion://block/id`) are not supported yet
@@ -1088,8 +1095,9 @@ Phase 5.8 tamamlandı. Sırada Phase 7 var (Phase 6 zaten tamamlandı).
 | 5.9 | Auto-continuation (list item Enter) | S | TODO |
 | 5.10 | Nested blocks (indentation) | M | TODO |
 | 6 | Rate Limiting | M | ✅ COMPLETE |
-| 7 | SQLite Cache | L | 🔜 NEXT |
-| 8 | Live Search + `[[` | M | TODO |
+| 7.1-7.2 | SQLite Cache (page caching) | L | ✅ COMPLETE |
+| 7.3 | Sync state + TTL | M | TODO |
+| 8 | Live Search + `[[` | M | 🔜 NEXT |
 | 9 | Slash Commands + Advanced Blocks | L | TODO |
 | 10 | Full Lossless + Polish | L | TODO |
 

@@ -183,6 +183,24 @@ local function check_cache()
           vim.health.info(string.format('Cache size: %.1f KB', size_kb))
         end
       end
+
+      -- Show sync state info
+      local sync_ok, sync_state = pcall(require, 'neotion.cache.sync_state')
+      if sync_ok then
+        local states = sync_state.get_all_states()
+        if #states > 0 then
+          local synced = 0
+          local modified = 0
+          for _, s in ipairs(states) do
+            if s.sync_status == 'synced' then
+              synced = synced + 1
+            elseif s.sync_status == 'modified' then
+              modified = modified + 1
+            end
+          end
+          vim.health.info(string.format('Sync state: %d tracked (%d synced, %d modified)', #states, synced, modified))
+        end
+      end
     else
       vim.health.info('Cache not initialized (will init on first page open)')
     end

@@ -120,8 +120,17 @@ function M.format_header(page)
   local title = pages_api.get_title(page)
   local parent_type, parent_id = pages_api.get_parent(page)
 
+  return M.format_header_from_metadata(title, parent_type, parent_id)
+end
+
+---Format header lines from metadata (used for cache loading)
+---@param title string Page title
+---@param parent_type string? Parent type ('workspace', 'page', 'database')
+---@param parent_id string? Parent ID
+---@return string[]
+function M.format_header_from_metadata(title, parent_type, parent_id)
   local lines = {
-    '# ' .. title,
+    '# ' .. (title or 'Untitled'),
     '',
   }
 

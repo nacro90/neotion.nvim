@@ -105,13 +105,13 @@ local function display_page_content(bufnr, page_id, page, raw_blocks, from_cache
     vim.notify('[neotion] Some blocks are read-only: ' .. table.concat(unsupported, ', '), vim.log.levels.WARN)
   end
 
-  -- Format header - use page object if available, otherwise create minimal header
+  -- Format header - use page object if available, otherwise create from cached metadata
   local header_lines
   if page then
     header_lines = format.format_header(page)
   else
-    -- Create header from cache data
-    header_lines = { '# ' .. title, '' }
+    -- Create header from cached metadata (consistent format)
+    header_lines = format.format_header_from_metadata(title, parent_type, parent_id)
   end
   local header_line_count = #header_lines
 
@@ -189,14 +189,120 @@ local function fetch_and_cache_page(bufnr, page_id)
         return
       end
 
-      -- Cache blocks
+      -- Cache blocks and update sync state
+      if cache.is_initialized() then
+        local cache_pages = require('neotion.cache.pages')
+        cache_pages.save_content(page_id, blocks_result.blocks)
+
+        -- Update sync state with content hash
+        local sync_state = require('neotion.cache.sync_state')
+        local content_hash = cache.hash.page_content(blocks_result.blocks)
+        sync_state.update_after_pull(page_id, content_hash)
+      end
+
+      -- Display content
+      display_page_content(bufnr, page_id, page, blocks_result.blocks, false)
+    end)
+  end)
+end
+
+--- Helper: Background refresh - fetch from API and update buffer if content changed
+--- Called after displaying cached content to ensure freshness
+---@param bufnr integer Buffer number
+---@param page_id string Normalized page ID
+---@param cached_hash string Hash of cached content
+local function bg_refresh_page(bufnr, page_id, cached_hash)
+  local buffer = require('neotion.buffer')
+  local pages_api = require('neotion.api.pages')
+  local blocks_api = require('neotion.api.blocks')
+  local cache = require('neotion.cache')
+  local sync_state = require('neotion.cache.sync_state')
+
+  log.debug('Starting background refresh', { page_id = page_id, cached_hash = cached_hash })
+
+  -- Fetch page info
+  pages_api.get(page_id, function(page_result)
+    -- Check if buffer is still valid
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+      log.debug('Buffer no longer valid, aborting refresh')
+      return
+    end
+
+    -- Check if buffer was modified by user - don't overwrite their changes
+    local status = buffer.get_status(bufnr)
+    if status == 'modified' then
+      log.debug('Buffer modified, skipping refresh')
+      return
+    end
+
+    if page_result.error then
+      log.warn('Background refresh failed', { error = page_result.error })
+      return
+    end
+
+    local page = page_result.page
+
+    -- Cache page metadata
+    if cache.is_initialized() then
+      local cache_pages = require('neotion.cache.pages')
+      cache_pages.save_page(page_id, page)
+    end
+
+    -- Fetch blocks
+    blocks_api.get_all_children(page_id, function(blocks_result)
+      -- Check if buffer is still valid
+      if not vim.api.nvim_buf_is_valid(bufnr) then
+        log.debug('Buffer no longer valid, aborting refresh')
+        return
+      end
+
+      -- Check again if buffer was modified
+      status = buffer.get_status(bufnr)
+      if status == 'modified' then
+        log.debug('Buffer modified during fetch, skipping refresh')
+        return
+      end
+
+      if blocks_result.error then
+        log.warn('Background refresh blocks failed', { error = blocks_result.error })
+        return
+      end
+
+      -- Calculate new hash
+      local new_hash = cache.hash.page_content(blocks_result.blocks)
+
+      -- Update sync state
+      sync_state.update_after_pull(page_id, new_hash)
+
+      -- Compare hashes - only update if changed
+      if new_hash == cached_hash then
+        log.debug('Content unchanged, no update needed', { page_id = page_id })
+        return
+      end
+
+      log.info('Content changed, updating buffer', {
+        page_id = page_id,
+        old_hash = cached_hash,
+        new_hash = new_hash,
+      })
+
+      -- Cache the new content
       if cache.is_initialized() then
         local cache_pages = require('neotion.cache.pages')
         cache_pages.save_content(page_id, blocks_result.blocks)
       end
 
-      -- Display content
-      display_page_content(bufnr, page_id, page, blocks_result.blocks, false)
+      -- Update buffer with new content
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(bufnr) then
+          -- Re-check status one more time before updating
+          local final_status = buffer.get_status(bufnr)
+          if final_status ~= 'modified' then
+            display_page_content(bufnr, page_id, page, blocks_result.blocks, false)
+            vim.notify('[neotion] Content refreshed', vim.log.levels.INFO)
+          end
+        end
+      end)
     end)
   end)
 end
@@ -265,10 +371,15 @@ function M.open(page_id)
     log.debug('Cache lookup', { page_id = normalized_id, found = cached_blocks ~= nil })
 
     if cached_blocks then
-      -- Found in cache! Load from cache
+      -- Found in cache! Load from cache immediately
+      local cached_hash = cache.hash.page_content(cached_blocks)
+
       vim.schedule(function()
         if vim.api.nvim_buf_is_valid(bufnr) then
           display_page_content(bufnr, normalized_id, nil, cached_blocks, true)
+
+          -- Start background refresh to check for updates
+          bg_refresh_page(bufnr, normalized_id, cached_hash)
         end
       end)
       return

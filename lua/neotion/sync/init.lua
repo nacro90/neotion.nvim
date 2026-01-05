@@ -296,31 +296,169 @@ function M.push(bufnr, callback)
   end
 end
 
----Pull changes from Notion to buffer (reload)
+---Pull changes from Notion to buffer (force reload from API)
 ---@param bufnr integer
 ---@param callback? fun(success: boolean, message: string)
 function M.pull(bufnr, callback)
   callback = callback or function() end
 
   local buffer = require('neotion.buffer')
+  local pages_api = require('neotion.api.pages')
+  local blocks_api = require('neotion.api.blocks')
+
+  log.info('Pull requested', { bufnr = bufnr })
 
   -- Check if this is a neotion buffer
   if not buffer.is_neotion_buffer(bufnr) then
+    log.warn('Pull called on non-neotion buffer', { bufnr = bufnr })
     vim.notify('[neotion] Not a Neotion buffer', vim.log.levels.WARN)
     callback(false, 'Not a Neotion buffer')
     return
   end
 
   local data = buffer.get_data(bufnr)
-  if not data then
+  if not data or not data.page_id then
+    log.error('Pull failed: no page_id in buffer data')
     callback(false, 'No buffer data')
     return
   end
 
-  -- Re-open the page (this will reload content)
-  local neotion = require('neotion')
-  neotion.open(data.page_id)
-  callback(true, 'Reloading...')
+  local page_id = data.page_id
+  log.info('Force pulling from API', { page_id = page_id })
+
+  -- Set loading state
+  buffer.set_status(bufnr, 'loading')
+
+  -- Fetch page info from API
+  pages_api.get(page_id, function(page_result)
+    -- Check if buffer is still valid
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+      log.debug('Buffer no longer valid during pull')
+      callback(false, 'Buffer closed')
+      return
+    end
+
+    if page_result.error then
+      log.error('Pull failed: page fetch error', { error = page_result.error })
+      buffer.set_status(bufnr, 'error')
+      vim.notify('[neotion] Pull failed: ' .. page_result.error, vim.log.levels.ERROR)
+      callback(false, page_result.error)
+      return
+    end
+
+    local page = page_result.page
+
+    -- Cache page metadata
+    local cache = require('neotion.cache')
+    if cache.is_initialized() then
+      local cache_pages = require('neotion.cache.pages')
+      cache_pages.save_page(page_id, page)
+    end
+
+    -- Fetch blocks from API
+    blocks_api.get_all_children(page_id, function(blocks_result)
+      -- Check if buffer is still valid
+      if not vim.api.nvim_buf_is_valid(bufnr) then
+        log.debug('Buffer no longer valid during pull')
+        callback(false, 'Buffer closed')
+        return
+      end
+
+      if blocks_result.error then
+        log.error('Pull failed: blocks fetch error', { error = blocks_result.error })
+        buffer.set_status(bufnr, 'error')
+        vim.notify('[neotion] Pull failed: ' .. blocks_result.error, vim.log.levels.ERROR)
+        callback(false, blocks_result.error)
+        return
+      end
+
+      -- Cache blocks and update sync state
+      if cache.is_initialized() then
+        local cache_pages = require('neotion.cache.pages')
+        cache_pages.save_content(page_id, blocks_result.blocks)
+
+        local sync_state = require('neotion.cache.sync_state')
+        local content_hash = cache.hash.page_content(blocks_result.blocks)
+        sync_state.update_after_pull(page_id, content_hash)
+      end
+
+      -- Display content (force update)
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(bufnr) then
+          log.debug('Pull: starting buffer update', { bufnr = bufnr })
+
+          local ok, err = pcall(function()
+            local format = require('neotion.buffer.format')
+            local model = require('neotion.model')
+
+            -- Get page info
+            local title = pages_api.get_title(page)
+            local parent_type, parent_id = pages_api.get_parent(page)
+            local icon = pages_api.get_icon(page)
+
+            log.debug('Pull: updating buffer data', { title = title })
+
+            buffer.update_data(bufnr, {
+              page_title = title,
+              parent_type = parent_type,
+              parent_id = parent_id,
+            })
+
+            -- Deserialize blocks
+            local blocks = model.deserialize_blocks(blocks_result.blocks)
+            log.debug('Pull: deserialized blocks', { count = #blocks })
+
+            -- Format header and blocks
+            local header_lines = format.format_header(page)
+            local header_line_count = #header_lines
+            local block_lines = model.format_blocks(blocks)
+
+            log.debug('Pull: formatted content', { header_lines = header_line_count, block_lines = #block_lines })
+
+            -- Combine header + blocks
+            local lines = {}
+            vim.list_extend(lines, header_lines)
+            vim.list_extend(lines, block_lines)
+
+            -- Set buffer content
+            log.debug('Pull: setting buffer content', { total_lines = #lines })
+            buffer.set_content(bufnr, lines)
+
+            -- Setup model layer with extmarks
+            log.debug('Pull: setting up model layer')
+            model.setup_buffer(bufnr, blocks, header_line_count)
+
+            -- Update buffer data
+            buffer.update_data(bufnr, {
+              last_sync = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+              header_line_count = header_line_count,
+            })
+            buffer.set_status(bufnr, 'ready')
+
+            -- Add to recent pages
+            buffer.add_recent(page_id, title, icon, parent_type)
+
+            -- Mark buffer as unmodified
+            vim.bo[bufnr].modified = false
+
+            log.info('Pull completed successfully', { page_id = page_id, title = title })
+            vim.notify('[neotion] Pulled: ' .. title, vim.log.levels.INFO)
+            callback(true, 'Pull complete')
+          end)
+
+          if not ok then
+            log.error('Pull: buffer update failed', { error = tostring(err) })
+            buffer.set_status(bufnr, 'error')
+            vim.notify('[neotion] Pull failed: ' .. tostring(err), vim.log.levels.ERROR)
+            callback(false, tostring(err))
+          end
+        else
+          log.debug('Pull: buffer no longer valid in vim.schedule')
+          callback(false, 'Buffer closed')
+        end
+      end)
+    end)
+  end)
 end
 
 ---Sync (bidirectional - push local changes, pull remote changes)

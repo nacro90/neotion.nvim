@@ -140,6 +140,80 @@ local subcommand_tbl = {
         :totable()
     end,
   },
+  -- Cache subcommands (Phase 7.3)
+  cache = {
+    impl = function(args, _)
+      local cache = require('neotion.cache')
+      local subcmd = args[1] or 'stats'
+
+      if subcmd == 'stats' then
+        if not cache.is_initialized() then
+          vim.notify('[neotion] Cache not initialized', vim.log.levels.INFO)
+          return
+        end
+        local stats = cache.stats()
+        local lines = {
+          'Cache Statistics:',
+          string.format('  Pages: %d', stats.page_count),
+          string.format('  Contents: %d', stats.content_count),
+        }
+        if stats.size_bytes > 0 then
+          local size_kb = stats.size_bytes / 1024
+          if size_kb >= 1024 then
+            table.insert(lines, string.format('  Size: %.1f MB', size_kb / 1024))
+          else
+            table.insert(lines, string.format('  Size: %.1f KB', size_kb))
+          end
+        end
+        -- Sync state info
+        local sync_ok, sync_state = pcall(require, 'neotion.cache.sync_state')
+        if sync_ok then
+          local states = sync_state.get_all_states()
+          if #states > 0 then
+            local synced, modified = 0, 0
+            for _, s in ipairs(states) do
+              if s.sync_status == 'synced' then
+                synced = synced + 1
+              elseif s.sync_status == 'modified' then
+                modified = modified + 1
+              end
+            end
+            table.insert(lines, string.format('  Sync: %d tracked (%d synced, %d modified)', #states, synced, modified))
+          end
+        end
+        vim.notify(table.concat(lines, '\n'), vim.log.levels.INFO)
+      elseif subcmd == 'clear' then
+        if not cache.is_initialized() then
+          vim.notify('[neotion] Cache not initialized', vim.log.levels.WARN)
+          return
+        end
+        local cache_pages = require('neotion.cache.pages')
+        cache_pages.clear_all()
+        vim.notify('[neotion] Cache cleared', vim.log.levels.INFO)
+      elseif subcmd == 'vacuum' then
+        if not cache.is_initialized() then
+          vim.notify('[neotion] Cache not initialized', vim.log.levels.WARN)
+          return
+        end
+        cache.vacuum()
+        vim.notify('[neotion] Cache vacuumed', vim.log.levels.INFO)
+      elseif subcmd == 'path' then
+        local db = require('neotion.cache.db')
+        vim.notify('[neotion] Cache path: ' .. db.get_default_path(), vim.log.levels.INFO)
+      else
+        vim.notify('[neotion] Usage: :Neotion cache [stats|clear|vacuum|path]', vim.log.levels.INFO)
+      end
+    end,
+    complete = function(subcmd_arg_lead)
+      local subcmds = { 'stats', 'clear', 'vacuum', 'path' }
+      return vim
+        .iter(subcmds)
+        :filter(function(s)
+          return s:find(subcmd_arg_lead, 1, true) == 1
+        end)
+        :totable()
+    end,
+  },
   -- Formatting subcommands (Phase 5.5)
   bold = {
     impl = function(_, opts)

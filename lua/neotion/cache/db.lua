@@ -54,10 +54,12 @@ function M.new(path)
 
   path = path or M.get_default_path()
 
-  -- Ensure directory exists
-  local dir = vim.fn.fnamemodify(path, ':h')
-  if vim.fn.isdirectory(dir) == 0 then
-    vim.fn.mkdir(dir, 'p')
+  -- Ensure directory exists (skip for :memory:)
+  if path ~= ':memory:' then
+    local dir = vim.fn.fnamemodify(path, ':h')
+    if vim.fn.isdirectory(dir) == 0 then
+      vim.fn.mkdir(dir, 'p')
+    end
   end
 
   local instance = setmetatable({

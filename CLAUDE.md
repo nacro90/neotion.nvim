@@ -807,13 +807,14 @@ CREATE TABLE sync_queue (
 - [x] Page content caching with JSON serialization (Phase 7.2)
 - [x] Cache-first loading in M.open() (Phase 7.2)
 - [x] Health check for cache status (Phase 7.2)
-- [ ] Sync state persistence
-- [ ] Background refresh with rate limiting
-- [ ] TTL-based cache invalidation
-- [x] Unit tests for cache modules (17 integration tests)
+- [x] Sync state persistence (Phase 7.3)
+- [x] Background refresh with hash comparison (Phase 7.3)
+- [x] `:Neotion cache` command (stats/clear/vacuum/path)
+- [x] Unit tests for cache modules (22+ tests)
 
 **Phase 7.1 (Complete):** SQLite infrastructure - db.lua, schema.lua, hash.lua
 **Phase 7.2 (Complete):** Page content caching - pages.lua, cache-first loading
+**Phase 7.3 (Complete):** Sync state + BG refresh - sync_state.lua, bg_refresh_page()
 
 ---
 
@@ -1074,11 +1075,16 @@ vim.g.neotion = vim.g.neotion
 - [x] **Testing:** 800+ test geçiyor
 - [x] **Compatibility:** Lua 5.1 API
 
-## Sonraki Adım: Phase 7.3 veya Phase 8
+## Sonraki Adım: Phase 8
 
-Phase 7.2 (Page content caching) tamamlandı. Seçenekler:
-- **Phase 7.3:** Sync state persistence, background refresh, TTL invalidation
+Phase 7 (SQLite Cache + Sync State) tamamlandı. Şimdi:
 - **Phase 8:** Live search + `[[` completion (cache altyapısı hazır)
+
+**Phase 7.3 Özeti:**
+- `sync_state.lua` - Hash tracking for pages
+- `bg_refresh_page()` - Cache-first + background API refresh
+- `:Neotion cache` command - stats/clear/vacuum/path
+- TTL gereksiz - her açılışta background refresh yapılıyor
 
 **Known Limitations:**
 - Block links (`notion://block/id`) are not supported yet
@@ -1095,8 +1101,7 @@ Phase 7.2 (Page content caching) tamamlandı. Seçenekler:
 | 5.9 | Auto-continuation (list item Enter) | S | TODO |
 | 5.10 | Nested blocks (indentation) | M | TODO |
 | 6 | Rate Limiting | M | ✅ COMPLETE |
-| 7.1-7.2 | SQLite Cache (page caching) | L | ✅ COMPLETE |
-| 7.3 | Sync state + TTL | M | TODO |
+| 7 | SQLite Cache + Sync State | L | ✅ COMPLETE |
 | 8 | Live Search + `[[` | M | 🔜 NEXT |
 | 9 | Slash Commands + Advanced Blocks | L | TODO |
 | 10 | Full Lossless + Polish | L | TODO |

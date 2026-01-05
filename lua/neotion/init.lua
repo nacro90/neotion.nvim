@@ -54,6 +54,150 @@ local function validate_page_id(page_id)
   return true, nil
 end
 
+--- Helper: Display page content in buffer
+---@param bufnr integer Buffer number
+---@param page_id string Normalized page ID
+---@param page table? Page metadata (nil if from cache)
+---@param raw_blocks table[] Raw blocks from API or cache
+---@param from_cache boolean Whether loaded from cache
+local function display_page_content(bufnr, page_id, page, raw_blocks, from_cache)
+  local buffer = require('neotion.buffer')
+  local format = require('neotion.buffer.format')
+  local model = require('neotion.model')
+  local pages_api = require('neotion.api.pages')
+
+  -- Get page info
+  local title, parent_type, parent_id, icon
+  if page then
+    title = pages_api.get_title(page)
+    parent_type, parent_id = pages_api.get_parent(page)
+    icon = pages_api.get_icon(page)
+  else
+    -- From cache - use cached metadata
+    local cache_pages = require('neotion.cache.pages')
+    local cached_meta = cache_pages.get_page(page_id)
+    if cached_meta then
+      title = cached_meta.title
+      parent_type = cached_meta.parent_type
+      parent_id = cached_meta.parent_id
+      icon = cached_meta.icon
+    else
+      title = 'Untitled'
+      parent_type = 'unknown'
+    end
+  end
+
+  buffer.update_data(bufnr, {
+    page_title = title,
+    parent_type = parent_type,
+    parent_id = parent_id,
+  })
+
+  -- Use model layer for block handling
+  local blocks = model.deserialize_blocks(raw_blocks)
+
+  -- Check editability and notify if some blocks are read-only
+  local is_fully_editable, unsupported = model.check_editability(blocks)
+  if not is_fully_editable then
+    vim.notify('[neotion] Some blocks are read-only: ' .. table.concat(unsupported, ', '), vim.log.levels.WARN)
+  end
+
+  -- Format header - use page object if available, otherwise create minimal header
+  local header_lines
+  if page then
+    header_lines = format.format_header(page)
+  else
+    -- Create header from cache data
+    header_lines = { '# ' .. title, '' }
+  end
+  local header_line_count = #header_lines
+
+  -- Format blocks
+  local block_lines = model.format_blocks(blocks)
+
+  -- Combine header + blocks
+  local lines = {}
+  vim.list_extend(lines, header_lines)
+  vim.list_extend(lines, block_lines)
+
+  -- Set buffer content
+  buffer.set_content(bufnr, lines)
+
+  -- Setup model layer with extmarks
+  model.setup_buffer(bufnr, blocks, header_line_count)
+
+  -- Update buffer data
+  buffer.update_data(bufnr, {
+    last_sync = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+    header_line_count = header_line_count,
+  })
+  buffer.set_status(bufnr, 'ready')
+
+  -- Add to recent pages
+  buffer.add_recent(page_id, title, icon, parent_type)
+
+  local source = from_cache and '(cached)' or ''
+  vim.notify('[neotion] Loaded: ' .. title .. ' ' .. source, vim.log.levels.INFO)
+end
+
+--- Helper: Fetch page from API and cache it
+---@param bufnr integer Buffer number
+---@param page_id string Normalized page ID
+local function fetch_and_cache_page(bufnr, page_id)
+  local buffer = require('neotion.buffer')
+  local pages_api = require('neotion.api.pages')
+  local blocks_api = require('neotion.api.blocks')
+
+  -- Fetch page info
+  pages_api.get(page_id, function(page_result)
+    -- Check if buffer is still valid (user might have closed it)
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+      return
+    end
+
+    if page_result.error then
+      buffer.set_status(bufnr, 'error')
+      buffer.set_content(bufnr, { 'Error: ' .. page_result.error })
+      vim.notify('[neotion] ' .. page_result.error, vim.log.levels.ERROR)
+      return
+    end
+
+    local page = page_result.page
+
+    -- Cache page metadata
+    local cache = require('neotion.cache')
+    if cache.is_initialized() then
+      local cache_pages = require('neotion.cache.pages')
+      cache_pages.save_page(page_id, page)
+    end
+
+    -- Fetch blocks
+    blocks_api.get_all_children(page_id, function(blocks_result)
+      -- Check if buffer is still valid
+      if not vim.api.nvim_buf_is_valid(bufnr) then
+        return
+      end
+
+      if blocks_result.error then
+        buffer.set_status(bufnr, 'error')
+        local title = pages_api.get_title(page)
+        buffer.set_content(bufnr, { '# ' .. title, '', 'Error loading content: ' .. blocks_result.error })
+        vim.notify('[neotion] ' .. blocks_result.error, vim.log.levels.ERROR)
+        return
+      end
+
+      -- Cache blocks
+      if cache.is_initialized() then
+        local cache_pages = require('neotion.cache.pages')
+        cache_pages.save_content(page_id, blocks_result.blocks)
+      end
+
+      -- Display content
+      display_page_content(bufnr, page_id, page, blocks_result.blocks, false)
+    end)
+  end)
+end
+
 ---Open a Notion page in a new buffer
 ---@param page_id string Notion page ID
 function M.open(page_id)
@@ -68,10 +212,10 @@ function M.open(page_id)
     return
   end
 
+  -- Normalize page ID
+  local normalized_id = page_id:gsub('-', '')
+
   local buffer = require('neotion.buffer')
-  local pages_api = require('neotion.api.pages')
-  local blocks_api = require('neotion.api.blocks')
-  local format = require('neotion.buffer.format')
 
   -- Create or get buffer
   local bufnr, is_new = buffer.create(page_id)
@@ -97,92 +241,34 @@ function M.open(page_id)
     -- If status is 'error' or 'modified', allow reload
   end
 
-  -- Set loading state and show placeholder
+  -- Set loading state
   buffer.set_status(bufnr, 'loading')
+
+  -- Initialize cache if not already done
+  local cache = require('neotion.cache')
+  if cache.is_available() and not cache.is_initialized() then
+    cache.init()
+  end
+
+  -- Try to load from cache first
+  if cache.is_initialized() then
+    local cache_pages = require('neotion.cache.pages')
+    local cached_blocks = cache_pages.get_content(normalized_id)
+
+    if cached_blocks then
+      -- Found in cache! Load from cache
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(bufnr) then
+          display_page_content(bufnr, normalized_id, nil, cached_blocks, true)
+        end
+      end)
+      return
+    end
+  end
+
+  -- Not in cache, show loading placeholder and fetch from API
   buffer.set_content(bufnr, { 'Loading...' })
-
-  -- Fetch page info
-  pages_api.get(page_id, function(page_result)
-    -- Check if buffer is still valid (user might have closed it)
-    if not vim.api.nvim_buf_is_valid(bufnr) then
-      return
-    end
-
-    if page_result.error then
-      buffer.set_status(bufnr, 'error')
-      buffer.set_content(bufnr, { 'Error: ' .. page_result.error })
-      vim.notify('[neotion] ' .. page_result.error, vim.log.levels.ERROR)
-      return
-    end
-
-    local page = page_result.page
-    local title = pages_api.get_title(page)
-    local parent_type, parent_id = pages_api.get_parent(page)
-
-    -- Get icon from page
-    local icon = pages_api.get_icon(page)
-
-    buffer.update_data(bufnr, {
-      page_title = title,
-      parent_type = parent_type,
-      parent_id = parent_id,
-    })
-
-    -- Fetch blocks
-    blocks_api.get_all_children(page_id, function(blocks_result)
-      -- Check if buffer is still valid
-      if not vim.api.nvim_buf_is_valid(bufnr) then
-        return
-      end
-
-      if blocks_result.error then
-        buffer.set_status(bufnr, 'error')
-        buffer.set_content(bufnr, { '# ' .. title, '', 'Error loading content: ' .. blocks_result.error })
-        vim.notify('[neotion] ' .. blocks_result.error, vim.log.levels.ERROR)
-        return
-      end
-
-      -- Use model layer for block handling
-      local model = require('neotion.model')
-      local blocks = model.deserialize_blocks(blocks_result.blocks)
-
-      -- Check editability and notify if some blocks are read-only
-      local is_fully_editable, unsupported = model.check_editability(blocks)
-      if not is_fully_editable then
-        vim.notify('[neotion] Some blocks are read-only: ' .. table.concat(unsupported, ', '), vim.log.levels.WARN)
-      end
-
-      -- Format header
-      local header_lines = format.format_header(page)
-      local header_line_count = #header_lines
-
-      -- Format blocks
-      local block_lines = model.format_blocks(blocks)
-
-      -- Combine header + blocks
-      local lines = {}
-      vim.list_extend(lines, header_lines)
-      vim.list_extend(lines, block_lines)
-
-      -- Set buffer content
-      buffer.set_content(bufnr, lines)
-
-      -- Setup model layer with extmarks
-      model.setup_buffer(bufnr, blocks, header_line_count)
-
-      -- Update buffer data
-      buffer.update_data(bufnr, {
-        last_sync = os.date('!%Y-%m-%dT%H:%M:%SZ'),
-        header_line_count = header_line_count,
-      })
-      buffer.set_status(bufnr, 'ready')
-
-      -- Add to recent pages
-      buffer.add_recent(page_id, title, icon, parent_type)
-
-      vim.notify('[neotion] Loaded: ' .. title, vim.log.levels.INFO)
-    end)
-  end)
+  fetch_and_cache_page(bufnr, normalized_id)
 end
 
 ---Create a new Notion page

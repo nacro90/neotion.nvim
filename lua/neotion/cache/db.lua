@@ -174,10 +174,11 @@ function DB:execute(sql, params)
   end
 
   local ok, result = pcall(function()
-    if params and #params > 0 then
+    if params and next(params) ~= nil then
       -- sqlite.lua: eval() supports both positional (?) and named (:name) parameters
       -- For positional: pass array like { 'value1', 'value2' }
       -- For named: pass table like { name = 'value' }
+      -- Note: #params only works for arrays, use next() for both array and hash tables
       return self._db:eval(sql, params)
     else
       self._db:execute(sql)
@@ -210,7 +211,7 @@ function DB:query(sql, params)
   end
 
   local ok, result = pcall(function()
-    if params and #params > 0 then
+    if params and next(params) ~= nil then
       return self._db:eval(sql, params)
     else
       return self._db:eval(sql)

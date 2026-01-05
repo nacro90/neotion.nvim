@@ -25,6 +25,23 @@ for _, path in ipairs(plenary_paths) do
   end
 end
 
+-- Add sqlite.lua to runtimepath and package.path - check multiple locations
+local sqlite_paths = {
+  plugin_root .. '/.deps/sqlite.lua',
+  vim.fn.stdpath('data') .. '/site/pack/vendor/start/sqlite.lua',
+  vim.fn.stdpath('data') .. '/lazy/sqlite.lua',
+  vim.env.HOME .. '/.local/share/nvim/lazy/sqlite.lua',
+}
+
+for _, path in ipairs(sqlite_paths) do
+  if vim.fn.isdirectory(path) == 1 then
+    vim.opt.rtp:prepend(path)
+    -- Also add to package.path for direct require
+    package.path = path .. '/lua/?.lua;' .. path .. '/lua/?/init.lua;' .. package.path
+    break
+  end
+end
+
 -- Disable swap files and backup
 vim.opt.swapfile = false
 vim.opt.backup = false

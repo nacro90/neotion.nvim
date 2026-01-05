@@ -818,42 +818,125 @@ CREATE TABLE sync_queue (
 
 ---
 
-### Phase 8: Live Search + `[[` Completion
-**Goal:** Real-time Telescope search, hızlı sayfa linking
+### Phase 8: Live Search + Search Cache
+**Goal:** Real-time Telescope search with search-driven caching
 
 **Complexity:** M (Medium)
 
-**Rationale:** obsidian.nvim'in en sevilen özelliği. Cache (Phase 7) gerekli.
+**Rationale:** Hızlı sayfa arama ve cache'i organik olarak doldurma.
 
-**Scope:**
-1. **Live search in Telescope**
-   - Debounced API calls (300ms)
-   - `telescope.finders.new_dynamic` veya async finder
-   - Cancel previous on new input
-   - Loading indicator
+**Notion API Search Facts:**
+- POST /search sadece `last_edited_time` sort destekliyor
+- Relevance sort yok - sort belirtilmezse Notion kendi algoritmasını kullanıyor
+- Notion'ın sıralamasını korumak önemli
 
-2. **`[[` completion**
-   - `input/triggers.lua` içinde handler aktifleştir
-   - On `[[`, page picker aç
-   - Insert `[Page Title](notion://page/id)`
+**Architecture: Search-Driven Cache**
+```
+User types query
+       ↓ (instant)
+Show cached results (frecency sorted)
+       ↓ (300ms debounce)
+API search → Cache results → Update display
+       ↓
+User continues typing → Cancel previous → Repeat
+```
+
+**Phase 8.1: Search Cache Layer**
+```
+cache/pages.lua eklemeleri:
+├── calculate_frecency(open_count, last_opened_at)
+├── search_cached(query, limit) - lokal LIKE arama
+├── save_pages_batch(pages) - toplu kayıt
+├── maybe_evict() - >1000 → en düşük frecency sil
+└── increment_open_count(page_id) - frecency güncelle
+
+api/pages.lua eklemeleri:
+└── search_with_id(query, callback) - request_id döner (cancel için)
+```
+
+**Frecency Algorithm (Mozilla Firefox tarzı - Notion'ın değil):**
+```lua
+-- Frecency = Frequency + Recency (Mozilla 2007)
+-- NOT Notion's algorithm - sadece cached results için kullanılıyor
+score = open_count * 10 + time_decay
+time_decay = max(0, 1 - age_days/30) * 100
+-- Yeni açılan: ~100 puan bonus (30 günde 0'a düşer)
+-- Her açılış: +10 kalıcı puan
+```
+
+**Sıralama Stratejisi:**
+| Durum | Sıralama | Kaynak |
+|-------|----------|--------|
+| Cache'den (instant) | Frecency score | Bizim algoritma |
+| API döndükten sonra | Notion'ın sıralaması | Notion relevance |
+| Merge | API first, cached extras | Notion öncelikli |
+
+**Not:** Notion'ın tam ranking algoritması bilinmiyor (kapalı kaynak).
+Best matches: recently edited + title > content + popularity labels.
+
+**Eviction Strategy:**
+- Cache limit: 1000 pages (configurable)
+- Dolunca: En düşük frecency score olanlar silinir
+- Açılmamış eski entry'ler silinmez (API 404 dönene kadar)
+
+**Phase 8.2: Live Telescope Search**
+```
+ui/live_search.lua (NEW):
+├── current_request_id tracking
+├── debounce_timer (300ms, configurable)
+├── cancel_previous() - throttle.cancel() kullan
+├── search(query, on_results) - orchestrator
+└── merge_results(api, cached) - API first, cached extras
+
+ui/picker.lua modifications:
+├── Telescope: dynamic refresh on results
+└── vim.ui.select: simple search (no live, just API)
+```
+
+**Hybrid Display Strategy:**
+| Zaman | Gösterilen | Kaynak |
+|-------|------------|--------|
+| 0ms | Cached results (frecency) | SQLite |
+| 300ms | Loading indicator | - |
+| ~500ms | API results + cached extras | Merged |
 
 **New Files:**
 ```
-lua/neotion/input/completions/
-└── page_link.lua             # [[ handler
+lua/neotion/ui/
+└── live_search.lua      # Debounce + cancel orchestrator
 ```
 
-**Modify:** `ui/picker.lua`, `input/triggers.lua`
+**Modify:**
+- `lua/neotion/cache/pages.lua` - frecency, search_cached, eviction
+- `lua/neotion/api/pages.lua` - search_with_id
+- `lua/neotion/ui/picker.lua` - live search integration
 
-**Dependencies:** Phase 6 (rate limiting), Phase 7 (cache for instant suggestions)
+**Config Additions:**
+```lua
+cache = {
+  max_pages = 1000,      -- Eviction threshold
+},
+search = {
+  debounce_ms = 300,     -- Live search debounce
+  show_cached = true,    -- Show cached results instantly
+},
+```
+
+**Dependencies:** Phase 6 (rate limiting + cancel), Phase 7 (SQLite cache)
 
 **Checklist:**
-- [ ] Telescope live search with debounce
-- [ ] `[[` trigger activation
-- [ ] Page link completion picker
-- [ ] Internal link format support (`notion://page/id`)
-- [ ] gf navigation for internal links (extend Phase 5.6)
-- [ ] Unit tests for completion modules
+- [ ] Phase 8.1a: `search_with_id()` in pages.lua
+- [ ] Phase 8.1b: Frecency calculation + `search_cached()` in cache/pages.lua
+- [ ] Phase 8.1c: Eviction logic (`maybe_evict()`)
+- [ ] Phase 8.1d: `save_pages_batch()` + `increment_open_count()`
+- [ ] Phase 8.2a: `live_search.lua` - debounce + cancel
+- [ ] Phase 8.2b: Telescope integration with hybrid display
+- [ ] Phase 8.2c: vim.ui.select fallback (simple, no live)
+- [ ] Unit tests for all modules
+
+**NOT in Phase 8 (Deferred):**
+- `[[` link completion → Phase 8.3
+- `/` slash commands → Phase 9 (higher priority than `[[`)
 
 ---
 
@@ -1075,16 +1158,17 @@ vim.g.neotion = vim.g.neotion
 - [x] **Testing:** 800+ test geçiyor
 - [x] **Compatibility:** Lua 5.1 API
 
-## Sonraki Adım: Phase 8
+## Sonraki Adım: Phase 8.1
 
 Phase 7 (SQLite Cache + Sync State) tamamlandı. Şimdi:
-- **Phase 8:** Live search + `[[` completion (cache altyapısı hazır)
+- **Phase 8.1:** Search cache layer - frecency, eviction, search_cached
+- **Phase 8.2:** Live Telescope search - debounce, cancel, hybrid display
 
-**Phase 7.3 Özeti:**
-- `sync_state.lua` - Hash tracking for pages
-- `bg_refresh_page()` - Cache-first + background API refresh
-- `:Neotion cache` command - stats/clear/vacuum/path
-- TTL gereksiz - her açılışta background refresh yapılıyor
+**Phase 8 Yaklaşımı: Search-Driven Cache**
+- Arama yapıldıkça cache dolacak (önceden fetch yok)
+- Frecency: `score = open_count * 10 + time_decay(30 gün)`
+- Cache limit: 1000 pages, eviction by lowest frecency
+- Hybrid display: cached first (instant) → API results (merged)
 
 **Known Limitations:**
 - Block links (`notion://block/id`) are not supported yet
@@ -1101,16 +1185,18 @@ Phase 7 (SQLite Cache + Sync State) tamamlandı. Şimdi:
 | 5.9 | Auto-continuation (list item Enter) | S | TODO |
 | 5.10 | Nested blocks (indentation) | M | TODO |
 | 6 | Rate Limiting | M | ✅ COMPLETE |
-| 7 | SQLite Cache + Sync State | L | ✅ COMPLETE |
-| 8 | Live Search + `[[` | M | 🔜 NEXT |
-| 9 | Slash Commands + Advanced Blocks | L | TODO |
+| 7.1-7.3 | SQLite Cache + Sync State | L | ✅ COMPLETE |
+| 8.1 | Search Cache Layer (frecency, eviction) | M | 🔜 NEXT |
+| 8.2 | Live Telescope Search | M | TODO |
+| 8.3 | `[[` Link Completion | S | TODO |
+| 9 | `/` Slash Commands | L | TODO |
 | 10 | Full Lossless + Polish | L | TODO |
 
 **Dependency Graph:**
 ```
-5.7 → 6 → 7 → 8 → 9 → 10
-              ↑
-              └── Cache needed for [[
+7.3 → 8.1 → 8.2 → 8.3
+              ↓
+              9 (/ slash commands, higher priority than [[)
 ```
 
 **Removed from Scope:** Daily notes, templates, database views (focused editor first)

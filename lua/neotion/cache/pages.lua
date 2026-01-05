@@ -28,7 +28,8 @@ function M.save_page(page_id, page)
   local title = pages_api.get_title(page)
   local parent_type, parent_id = pages_api.get_parent(page)
   local icon = pages_api.get_icon(page)
-  local icon_type = page.icon and page.icon.type or nil
+  -- page.icon can be vim.NIL (userdata) when null in JSON, so check type
+  local icon_type = (page.icon and type(page.icon) == 'table') and page.icon.type or nil
 
   -- Parse timestamps
   local last_edited_time = 0

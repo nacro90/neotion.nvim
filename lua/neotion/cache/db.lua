@@ -21,9 +21,11 @@ function M.is_sqlite_available()
   local ok, lib = pcall(require, 'sqlite.db')
   if ok and lib then
     sqlite_db_module = lib
+    log.debug('sqlite.lua loaded successfully')
     return true
   end
 
+  log.debug('sqlite.lua require failed', { ok = ok, error = tostring(lib) })
   return false
 end
 

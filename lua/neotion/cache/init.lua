@@ -16,7 +16,11 @@ local db_instance = nil
 --- Check if sqlite.lua is available for caching
 --- @return boolean available
 function M.is_available()
-  return db_module.is_sqlite_available()
+  local available = db_module.is_sqlite_available()
+  if not available then
+    log.debug('sqlite.lua not available - cache disabled')
+  end
+  return available
 end
 
 --- Check if cache is initialized and ready

@@ -157,6 +157,47 @@ local function check_throttle()
   return true
 end
 
+---@return boolean
+local function check_cache()
+  local ok, cache = pcall(require, 'neotion.cache')
+  if not ok then
+    vim.health.error('Cache module failed to load')
+    return false
+  end
+
+  -- Check if sqlite.lua is available
+  if cache.is_available() then
+    vim.health.ok('sqlite.lua is installed (cache enabled)')
+
+    -- Check if cache is initialized
+    if cache.is_initialized() then
+      local stats = cache.stats()
+      vim.health.ok(string.format('Cache initialized: %d pages, %d contents', stats.page_count, stats.content_count))
+
+      -- Show cache size
+      if stats.size_bytes > 0 then
+        local size_kb = stats.size_bytes / 1024
+        if size_kb >= 1024 then
+          vim.health.info(string.format('Cache size: %.1f MB', size_kb / 1024))
+        else
+          vim.health.info(string.format('Cache size: %.1f KB', size_kb))
+        end
+      end
+    else
+      vim.health.info('Cache not initialized (will init on first page open)')
+    end
+
+    return true
+  else
+    vim.health.warn('sqlite.lua not installed (cache disabled)', {
+      'Install sqlite.lua for offline page caching',
+      'lazy.nvim: { "kkharji/sqlite.lua" }',
+      'packer: use "kkharji/sqlite.lua"',
+    })
+    return false
+  end
+end
+
 ---Main health check function
 function M.check()
   vim.health.start('neotion.nvim')
@@ -168,6 +209,9 @@ function M.check()
 
   vim.health.start('Recommended')
   check_treesitter()
+
+  vim.health.start('Cache')
+  check_cache()
 
   vim.health.start('Rate limiting')
   check_throttle()

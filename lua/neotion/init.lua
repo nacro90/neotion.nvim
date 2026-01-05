@@ -19,6 +19,9 @@
 ---@class Neotion
 local M = {}
 
+local log_module = require('neotion.log')
+local log = log_module.get_logger('init')
+
 ---Configure neotion (optional, only overrides defaults)
 ---Configuration can also be done via vim.g.neotion
 ---@param opts neotion.Config? Optional configuration table
@@ -246,14 +249,20 @@ function M.open(page_id)
 
   -- Initialize cache if not already done
   local cache = require('neotion.cache')
+
+  log.debug('Cache check', { available = cache.is_available(), initialized = cache.is_initialized() })
+
   if cache.is_available() and not cache.is_initialized() then
-    cache.init()
+    local init_ok = cache.init()
+    log.debug('Cache init result', { success = init_ok })
   end
 
   -- Try to load from cache first
   if cache.is_initialized() then
     local cache_pages = require('neotion.cache.pages')
     local cached_blocks = cache_pages.get_content(normalized_id)
+
+    log.debug('Cache lookup', { page_id = normalized_id, found = cached_blocks ~= nil })
 
     if cached_blocks then
       -- Found in cache! Load from cache
@@ -264,6 +273,8 @@ function M.open(page_id)
       end)
       return
     end
+  else
+    log.debug('Cache not initialized, skipping cache lookup')
   end
 
   -- Not in cache, show loading placeholder and fetch from API

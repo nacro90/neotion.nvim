@@ -94,6 +94,63 @@ function M.search(query, callback)
   end)
 end
 
+---@class neotion.api.SearchHandle
+---@field request_id string The request ID for cancellation
+---@field cancel fun(): boolean Function to cancel the request
+
+---Search for pages with cancellation support (for live search)
+---@param query? string Search query (optional)
+---@param callback fun(result: neotion.api.PageListResult)
+---@return neotion.api.SearchHandle|nil handle Request handle with cancel function, or nil if auth failed
+function M.search_with_cancel(query, callback)
+  local auth = require('neotion.api.auth')
+  local throttle = require('neotion.api.throttle')
+
+  local token_result = auth.get_token()
+  if not token_result.token then
+    -- Schedule callback to maintain async semantics
+    vim.schedule(function()
+      callback({ pages = {}, has_more = false, error = token_result.error })
+    end)
+    return nil
+  end
+
+  local body = {
+    filter = { property = 'object', value = 'page' },
+    page_size = 100,
+  }
+
+  if query and query ~= '' then
+    body.query = query
+  end
+
+  local request_id = throttle.post('/search', token_result.token, body, function(response)
+    if response.cancelled then
+      callback({ pages = {}, has_more = false, error = 'Request cancelled' })
+      return
+    end
+    if response.error then
+      callback({ pages = {}, has_more = false, error = response.error })
+      return
+    end
+
+    local pages = response.body.results or {}
+    callback({
+      pages = pages,
+      has_more = response.body.has_more or false,
+      next_cursor = response.body.next_cursor,
+      error = nil,
+    })
+  end)
+
+  return {
+    request_id = request_id,
+    cancel = function()
+      return throttle.cancel(request_id)
+    end,
+  }
+end
+
 ---Extract page title from properties
 ---@param page neotion.api.Page
 ---@return string

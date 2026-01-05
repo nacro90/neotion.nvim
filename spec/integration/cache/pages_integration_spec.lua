@@ -95,8 +95,8 @@ describe('neotion.cache.pages integration', function()
 
       local result = pages.get_page(page_id)
       assert.are.equal('Updated', result.title)
-      -- open_count should increment
-      assert.are.equal(2, result.open_count)
+      -- open_count should NOT increment on save (only on explicit update_open_stats)
+      assert.are.equal(0, result.open_count)
     end)
   end)
 

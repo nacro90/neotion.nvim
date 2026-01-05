@@ -299,4 +299,129 @@ describe('neotion.api.pages', function()
       package.loaded['neotion.api.auth'] = nil
     end)
   end)
+
+  describe('search_with_cancel', function()
+    it('should return request handle with request_id', function()
+      -- Mock auth and throttle
+      package.loaded['neotion.api.auth'] = {
+        get_token = function()
+          return { token = 'test-token', error = nil }
+        end,
+      }
+      package.loaded['neotion.api.throttle'] = {
+        post = function(_, _, _, _)
+          return 'mock-request-id-123'
+        end,
+        cancel = function(_)
+          return true
+        end,
+      }
+
+      -- Reload pages module to pick up mocks
+      package.loaded['neotion.api.pages'] = nil
+      local pages_fresh = require('neotion.api.pages')
+
+      local handle = pages_fresh.search_with_cancel('test', function() end)
+
+      assert.is_table(handle)
+      assert.is_string(handle.request_id)
+      assert.are.equal('mock-request-id-123', handle.request_id)
+
+      -- Clean up mocks
+      package.loaded['neotion.api.auth'] = nil
+      package.loaded['neotion.api.throttle'] = nil
+      package.loaded['neotion.api.pages'] = nil
+    end)
+
+    it('should return handle with cancel function', function()
+      package.loaded['neotion.api.auth'] = {
+        get_token = function()
+          return { token = 'test-token', error = nil }
+        end,
+      }
+      package.loaded['neotion.api.throttle'] = {
+        post = function(_, _, _, _)
+          return 'mock-request-id-456'
+        end,
+        cancel = function(_)
+          return true
+        end,
+      }
+
+      package.loaded['neotion.api.pages'] = nil
+      local pages_fresh = require('neotion.api.pages')
+
+      local handle = pages_fresh.search_with_cancel('test', function() end)
+
+      assert.is_function(handle.cancel)
+
+      -- Clean up
+      package.loaded['neotion.api.auth'] = nil
+      package.loaded['neotion.api.throttle'] = nil
+      package.loaded['neotion.api.pages'] = nil
+    end)
+
+    it('should cancel request via handle.cancel()', function()
+      local cancelled_id = nil
+
+      package.loaded['neotion.api.auth'] = {
+        get_token = function()
+          return { token = 'test-token', error = nil }
+        end,
+      }
+      package.loaded['neotion.api.throttle'] = {
+        post = function(_, _, _, _)
+          return 'request-to-cancel'
+        end,
+        cancel = function(id)
+          cancelled_id = id
+          return true
+        end,
+      }
+
+      package.loaded['neotion.api.pages'] = nil
+      local pages_fresh = require('neotion.api.pages')
+
+      local handle = pages_fresh.search_with_cancel('test', function() end)
+      local result = handle.cancel()
+
+      assert.is_true(result)
+      assert.are.equal('request-to-cancel', cancelled_id)
+
+      -- Clean up
+      package.loaded['neotion.api.auth'] = nil
+      package.loaded['neotion.api.throttle'] = nil
+      package.loaded['neotion.api.pages'] = nil
+    end)
+
+    it('should return nil handle when no token', function()
+      package.loaded['neotion.api.auth'] = {
+        get_token = function()
+          return { token = nil, error = 'No token' }
+        end,
+      }
+
+      package.loaded['neotion.api.pages'] = nil
+      local pages_fresh = require('neotion.api.pages')
+
+      local callback_called = false
+      local handle = pages_fresh.search_with_cancel('test', function()
+        callback_called = true
+      end)
+
+      -- Should return nil handle when auth fails
+      assert.is_nil(handle)
+
+      -- Wait for callback
+      vim.wait(100, function()
+        return callback_called
+      end)
+
+      assert.is_true(callback_called)
+
+      -- Clean up
+      package.loaded['neotion.api.auth'] = nil
+      package.loaded['neotion.api.pages'] = nil
+    end)
+  end)
 end)

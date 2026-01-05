@@ -54,11 +54,14 @@ function M.save_page(page_id, page)
   local now = os.time()
 
   -- Use INSERT OR REPLACE for upsert
+  -- IMPORTANT: Do NOT increment open_count on save - only update_open_stats should do that
+  -- IMPORTANT: Preserve last_opened_at - only update_open_stats should set it
   local sql = [[
     INSERT OR REPLACE INTO pages
     (id, title, icon, icon_type, parent_type, parent_id, last_edited_time, created_time, cached_at, last_opened_at, open_count, is_deleted)
-    VALUES (:id, :title, :icon, :icon_type, :parent_type, :parent_id, :last_edited_time, :created_time, :cached_at, :last_opened_at,
-            COALESCE((SELECT open_count FROM pages WHERE id = :id), 0) + 1, 0)
+    VALUES (:id, :title, :icon, :icon_type, :parent_type, :parent_id, :last_edited_time, :created_time, :cached_at,
+            (SELECT last_opened_at FROM pages WHERE id = :id),
+            COALESCE((SELECT open_count FROM pages WHERE id = :id), 0), 0)
   ]]
 
   local success = db:execute(sql, {
@@ -71,7 +74,6 @@ function M.save_page(page_id, page)
     last_edited_time = last_edited_time,
     created_time = created_time,
     cached_at = now,
-    last_opened_at = now,
   })
 
   if success then
@@ -253,10 +255,13 @@ function M.get_recent(limit)
   return db:query(sql, { limit = limit })
 end
 
---- Search pages by title (for picker)
+--- Search pages by title with frecency ranking
+--- Frecency formula: score = open_count * 10 + max(0, (1 - age_days/30) * 100)
+--- - Frequency: Each open adds 10 permanent points
+--- - Recency: Recent opens add up to 100 points (decays to 0 over 30 days)
 ---@param query string Search query
 ---@param limit integer? Maximum number of results (default 50)
----@return table[] pages Array of matching pages
+---@return table[] pages Array of matching pages ordered by frecency
 function M.search(query, limit)
   local db = get_db()
   if not db then
@@ -264,14 +269,29 @@ function M.search(query, limit)
   end
 
   limit = limit or 50
+  local now = os.time()
+
+  -- Frecency calculation:
+  -- - open_count * 10 = frequency score (permanent)
+  -- - recency score = 100 points that decay to 0 over 30 days
+  -- - If never opened (last_opened_at is NULL), recency = 0
   local sql = [[
-    SELECT * FROM pages
+    SELECT *,
+      (
+        COALESCE(open_count, 0) * 10 +
+        CASE
+          WHEN last_opened_at IS NULL THEN 0
+          WHEN :now - last_opened_at >= 2592000 THEN 0
+          ELSE (1.0 - (:now - last_opened_at) / 2592000.0) * 100.0
+        END
+      ) AS frecency_score
+    FROM pages
     WHERE is_deleted = 0 AND title LIKE :pattern
-    ORDER BY open_count DESC, last_opened_at DESC
+    ORDER BY frecency_score DESC
     LIMIT :limit
   ]]
 
-  return db:query(sql, { pattern = '%' .. query .. '%', limit = limit })
+  return db:query(sql, { pattern = '%' .. query .. '%', limit = limit, now = now })
 end
 
 --- Get cache age for a page
@@ -324,6 +344,136 @@ function M.clear_all()
     log.info('Cache cleared completely')
   end
   return success
+end
+
+--- Save multiple pages in a single transaction (for search results)
+--- Does NOT increment open_count - these are just API results being cached
+---@param pages table[] Array of Notion page objects from API
+---@return integer count Number of pages saved
+function M.save_pages_batch(pages)
+  local db = get_db()
+  if not db then
+    log.debug('Cache not initialized, skipping save_pages_batch')
+    return 0
+  end
+
+  if #pages == 0 then
+    return 0
+  end
+
+  local pages_api = require('neotion.api.pages')
+  local count = 0
+
+  local success = db:transaction(function()
+    for _, page in ipairs(pages) do
+      local page_id = page.id and page.id:gsub('-', '')
+      if page_id then
+        local title = pages_api.get_title(page)
+        local parent_type, parent_id = pages_api.get_parent(page)
+        local icon = pages_api.get_icon(page)
+        local icon_type = (page.icon and type(page.icon) == 'table') and page.icon.type or nil
+
+        -- Parse timestamps
+        local last_edited_time = 0
+        if page.last_edited_time then
+          local pattern = '(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)'
+          local y, m, d, h, min, s = page.last_edited_time:match(pattern)
+          if y then
+            last_edited_time = os.time({ year = y, month = m, day = d, hour = h, min = min, sec = s })
+          end
+        end
+
+        local created_time = 0
+        if page.created_time then
+          local pattern = '(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)'
+          local y, m, d, h, min, s = page.created_time:match(pattern)
+          if y then
+            created_time = os.time({ year = y, month = m, day = d, hour = h, min = min, sec = s })
+          end
+        end
+
+        local now = os.time()
+
+        local sql = [[
+          INSERT OR REPLACE INTO pages
+          (id, title, icon, icon_type, parent_type, parent_id, last_edited_time, created_time, cached_at, last_opened_at, open_count, is_deleted)
+          VALUES (:id, :title, :icon, :icon_type, :parent_type, :parent_id, :last_edited_time, :created_time, :cached_at,
+                  (SELECT last_opened_at FROM pages WHERE id = :id),
+                  COALESCE((SELECT open_count FROM pages WHERE id = :id), 0), 0)
+        ]]
+
+        if
+          db:execute(sql, {
+            id = page_id,
+            title = title,
+            icon = icon,
+            icon_type = icon_type,
+            parent_type = parent_type,
+            parent_id = parent_id,
+            last_edited_time = last_edited_time,
+            created_time = created_time,
+            cached_at = now,
+          })
+        then
+          count = count + 1
+        end
+      end
+    end
+    return true
+  end)
+
+  if success then
+    log.info('Batch saved pages', { count = count })
+  end
+  return count
+end
+
+--- Evict lowest frecency pages when cache exceeds limit (soft delete)
+---@param max_pages integer Maximum number of pages to keep
+---@return integer evicted Number of pages evicted
+function M.maybe_evict(max_pages)
+  local db = get_db()
+  if not db then
+    return 0
+  end
+
+  -- Count current pages
+  local count_row = db:query_one('SELECT COUNT(*) as count FROM pages WHERE is_deleted = 0')
+  local current_count = count_row and count_row.count or 0
+
+  if current_count <= max_pages then
+    return 0
+  end
+
+  local to_evict = current_count - max_pages
+  local now = os.time()
+
+  -- Soft delete lowest frecency pages
+  -- Frecency = open_count * 10 + recency_bonus (0-100 based on 30 day decay)
+  local sql = [[
+    UPDATE pages SET is_deleted = 1
+    WHERE id IN (
+      SELECT id FROM pages
+      WHERE is_deleted = 0
+      ORDER BY (
+        COALESCE(open_count, 0) * 10 +
+        CASE
+          WHEN last_opened_at IS NULL THEN 0
+          WHEN :now - last_opened_at >= 2592000 THEN 0
+          ELSE (1.0 - (:now - last_opened_at) / 2592000.0) * 100.0
+        END
+      ) ASC
+      LIMIT :limit
+    )
+  ]]
+
+  local success = db:execute(sql, { now = now, limit = to_evict })
+  if success then
+    log.info('Evicted low-frecency pages', { count = to_evict })
+    return to_evict
+  end
+
+  return 0
 end
 
 return M

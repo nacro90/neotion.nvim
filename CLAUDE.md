@@ -59,7 +59,7 @@ Complete editing experience overhaul:
 - **Block Absorption Fix**: `right_gravity = true` extmark ayari
 - **Orphan Line Handling**: Block'lara ait olmayan satirlar
 - **New Block Creation**: `o` sonrasi yeni block olusturma
-- **Type Detection**: `# ` → heading, `- ` → bullet, `---` → divider
+- **Type Detection**: `# ` → heading, `- ` → bullet, `1. ` → numbered, `---` → divider
 
 Detaylar: `TODO.md`
 
@@ -75,6 +75,7 @@ Detaylar: `TODO.md`
 | Color | `<c:red>text</c>` | |
 | Link | `[text](url)` | |
 | Bullet | `- `, `* `, `+ ` | |
+| Numbered | `1. `, `2. ` | |
 | Quote | `\| ` | |
 | Code block | ` ``` ` | |
 

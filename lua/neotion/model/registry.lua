@@ -21,9 +21,9 @@ local type_to_module = {
   divider = 'divider',
   quote = 'quote',
   bulleted_list_item = 'bulleted_list',
+  numbered_list_item = 'numbered_list',
   code = 'code',
   -- Phase 9+
-  -- numbered_list_item = 'numbered_list',
   -- to_do = 'todo',
   -- toggle = 'toggle',
   -- callout = 'callout',

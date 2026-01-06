@@ -44,7 +44,18 @@ Editing deneyimini iyilestirmek icin tam bir refactor planliyoruz.
 
 ## Ideas
 
-- [ ] `:edit` komutu `Neotion pull` tetiklesin - buffer resetlenirken son sync anina donmeli
+- [ ] **`:edit` ile Discard Changes**: Normal neovim buffer'i gibi "discard unsaved changes" davranisi
+  - `:edit` → aninda pull calistir
+  - API'den gelen response ile buffer'i guncelle (notu yeni acmis gibi)
+  - Kaydedilmemis degisiklikleri at, cache'in ilk haline don
+  - UX: Kullanici buffer'da degisiklik yapti ama vazgecti → `:e` ile temize don
+
+- [ ] **Sync Sonrasi Cache Guncellemesi**: Basarili sync sonrasi local cache eski kaliyor
+  - Push/sync basarili → local cache'i de guncelle
+  - Suan: API'ye gonderiyoruz ama cache hala eski content tutuyor
+  - Risk: Sonraki `:edit` veya pull eski cache'den okuyor
+  - Fix: Sync success callback'inde cache update cagirilmali
+
 - [ ] `[[` Link Completion (Phase 9.4)
 - [ ] `@` Mention completion (page/date) (Phase 9.5)
 - [ ] `/` Transforms: `/` → `[[`, `/` → `@`
@@ -80,7 +91,7 @@ Basitten karmasiga dogru block tipi destegi:
 - [x] toggle (icerik gizli)
 
 ### Tier 1: Basit Text-based
-- [ ] **numbered_list_item** - bulleted_list_item ile neredeyse ayni, `1. ` prefix
+- [x] **numbered_list_item** - bulleted_list_item ile neredeyse ayni, `1. ` prefix ✓
 - [ ] **to_do** - checkbox, `[ ]` / `[x]` prefix + checked state
 
 ### Tier 2: Orta Karmasiklik

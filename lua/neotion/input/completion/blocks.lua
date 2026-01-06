@@ -12,6 +12,7 @@ local BLOCK_DISPLAY = {
   heading_2 = { label = 'Heading 2', icon = 'H2', description = '## Medium heading' },
   heading_3 = { label = 'Heading 3', icon = 'H3', description = '### Small heading' },
   bulleted_list_item = { label = 'Bullet list', icon = '-', description = '- List item' },
+  numbered_list_item = { label = 'Numbered list', icon = '1.', description = '1. Numbered item' },
   quote = { label = 'Quote', icon = '|', description = '| Quote block' },
   code = { label = 'Code', icon = '</>', description = '``` Code block' },
   divider = { label = 'Divider', icon = '---', description = 'Horizontal line' },

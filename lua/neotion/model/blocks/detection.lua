@@ -17,6 +17,8 @@ local PREFIX_PATTERNS = {
   { pattern = '^(### )', prefix = '### ', type = 'heading_3' },
   { pattern = '^(## )', prefix = '## ', type = 'heading_2' },
   { pattern = '^(# )', prefix = '# ', type = 'heading_1' },
+  -- Numbered list pattern (must come before bullets, e.g., "1. ", "23. ")
+  { pattern = '^(%d+%. )', prefix = nil, type = 'numbered_list_item' },
   -- Bullet list patterns (must start at line beginning, no indent)
   { pattern = '^(%- )', prefix = '- ', type = 'bulleted_list_item' },
   { pattern = '^(%* )', prefix = '* ', type = 'bulleted_list_item' },
@@ -32,6 +34,7 @@ local TYPE_TO_PREFIX = {
   heading_2 = '## ',
   heading_3 = '### ',
   bulleted_list_item = '- ',
+  numbered_list_item = '1. ',
   quote = '| ',
 }
 
@@ -48,7 +51,9 @@ function M.detect_type(line)
   for _, pattern_info in ipairs(PREFIX_PATTERNS) do
     local match = line:match(pattern_info.pattern)
     if match then
-      return pattern_info.type, pattern_info.prefix
+      -- Use matched capture for dynamic prefixes (e.g., "1. ", "23. ")
+      -- or static prefix if defined
+      return pattern_info.type, pattern_info.prefix or match
     end
   end
 

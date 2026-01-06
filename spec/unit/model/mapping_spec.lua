@@ -1102,5 +1102,30 @@ describe('neotion.model.mapping', function()
       assert.are.equal(2, orphans[1].start_line)
       assert.are.equal(3, orphans[1].end_line)
     end)
+
+    -- Bug: When page is opened with zero blocks, all content should be orphan
+    it('should detect all content as orphan when buffer has zero blocks', function()
+      -- Setup with NO blocks (fresh page or all blocks deleted)
+      mapping.setup(bufnr, {})
+
+      -- Set buffer content with header + content
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        '# Test Page', -- header line 1
+        '', -- header line 2
+        '---', -- divider content
+        '## Test title 1', -- heading content
+      })
+
+      -- Detect orphans with 2 header lines
+      local orphans = mapping.detect_orphan_lines(bufnr, 2)
+
+      -- Should find all content lines as single orphan range
+      assert.are.equal(1, #orphans, 'Should detect 1 orphan range')
+      assert.are.equal(3, orphans[1].start_line, 'Orphan should start at line 3')
+      assert.are.equal(4, orphans[1].end_line, 'Orphan should end at line 4')
+      assert.are.equal('---', orphans[1].content[1])
+      assert.are.equal('## Test title 1', orphans[1].content[2])
+      assert.is_nil(orphans[1].after_block_id, 'No previous block')
+    end)
   end)
 end)

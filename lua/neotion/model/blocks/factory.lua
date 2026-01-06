@@ -111,7 +111,8 @@ function M.create_raw_block(block_type, content)
     return {
       type = 'divider',
       id = nil,
-      divider = {},
+      -- vim.empty_dict() ensures JSON encodes as {} (object) not [] (array)
+      divider = vim.empty_dict(),
     }
   end
 
@@ -172,6 +173,14 @@ local function split_orphan_by_type_boundaries(lines)
         current_segment = nil
       end
       table.insert(segments, { type = 'divider', lines = { line }, start_offset = offset })
+
+    -- List items are ALWAYS single-line blocks (each item is a separate Notion block)
+    elseif line_type == 'bulleted_list_item' or line_type == 'numbered_list_item' then
+      if current_segment then
+        table.insert(segments, current_segment)
+        current_segment = nil
+      end
+      table.insert(segments, { type = line_type, lines = { line }, start_offset = offset })
 
     -- Empty lines: end non-paragraph segments, accumulate in paragraph
     elseif line == '' then

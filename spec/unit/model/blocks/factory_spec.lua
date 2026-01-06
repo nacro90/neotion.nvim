@@ -375,10 +375,32 @@ describe('neotion.model.blocks.factory', function()
 
         local blocks = factory.create_from_orphans(orphans)
 
-        -- Same type consecutive - currently treated as one segment
-        -- This is correct behavior: consecutive same-type lines = one block
-        assert.are.equal(1, #blocks)
+        -- Each list item is a separate Notion block
+        assert.are.equal(2, #blocks)
         assert.are.equal('bulleted_list_item', blocks[1]:get_type())
+        assert.are.equal('bulleted_list_item', blocks[2]:get_type())
+        assert.are.equal('item 1', blocks[1]:get_text())
+        assert.are.equal('item 2', blocks[2]:get_text())
+      end)
+
+      it('should handle consecutive numbered items as separate blocks', function()
+        local orphans = {
+          {
+            start_line = 1,
+            end_line = 2,
+            content = { '1. first', '2. second' },
+            after_block_id = 'block1',
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        -- Each numbered item is a separate Notion block
+        assert.are.equal(2, #blocks)
+        assert.are.equal('numbered_list_item', blocks[1]:get_type())
+        assert.are.equal('numbered_list_item', blocks[2]:get_type())
+        assert.are.equal('first', blocks[1]:get_text())
+        assert.are.equal('second', blocks[2]:get_text())
       end)
     end)
   end)

@@ -525,11 +525,7 @@ end
 ---@return neotion.OrphanLineRange[] List of orphan line ranges
 function M.detect_orphan_lines(bufnr, header_lines)
   local log = require('neotion.log').get_logger('mapping')
-  local blocks = buffer_blocks[bufnr]
-
-  if not blocks or #blocks == 0 then
-    return {}
-  end
+  local blocks = buffer_blocks[bufnr] or {}
 
   local total_lines = vim.api.nvim_buf_line_count(bufnr)
   local start_line = header_lines + 1 -- First content line after header
@@ -540,6 +536,11 @@ function M.detect_orphan_lines(bufnr, header_lines)
     total_lines = total_lines,
     block_count = #blocks,
   })
+
+  -- If no content lines exist, return empty
+  if start_line > total_lines then
+    return {}
+  end
 
   -- Build set of owned lines
   ---@type table<integer, neotion.Block>

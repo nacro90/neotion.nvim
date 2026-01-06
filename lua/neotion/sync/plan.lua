@@ -73,7 +73,7 @@ function M.create(bufnr)
 
   -- Get header line count from buffer data
   local buf_data = buffer.get_data(bufnr)
-  local header_lines = buf_data and buf_data.header_lines or 6 -- Default header line count
+  local header_lines = buf_data and buf_data.header_line_count or 6 -- Default header line count
 
   local orphans = mapping.detect_orphan_lines(bufnr, header_lines)
   if #orphans > 0 then

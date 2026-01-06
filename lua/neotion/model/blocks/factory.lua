@@ -151,16 +151,19 @@ end
 --- Split orphan lines into segments by type boundaries
 --- Different block types (quote, heading, bullet, divider) become separate blocks
 --- Bug #10.2 fix: Prevents mixing different types into single block
+--- Bug #10.4 fix: Track start_offset for each segment for model integration
 ---@param lines string[] Lines to split
----@return {lines: string[], type: string|nil}[] segments Split segments
+---@return {lines: string[], type: string|nil, start_offset: integer}[] segments Split segments with offsets
 local function split_orphan_by_type_boundaries(lines)
   local detection = require('neotion.model.blocks.detection')
   local segments = {}
   local current_segment = nil
 
-  for _, line in ipairs(lines) do
+  for line_index, line in ipairs(lines) do
     local line_type = detection.detect_type(line)
     -- nil means paragraph (no special prefix)
+    -- line_index is 1-based, offset should be 0-based
+    local offset = line_index - 1
 
     -- Dividers are ALWAYS single-line blocks
     if line_type == 'divider' then
@@ -168,7 +171,7 @@ local function split_orphan_by_type_boundaries(lines)
         table.insert(segments, current_segment)
         current_segment = nil
       end
-      table.insert(segments, { type = 'divider', lines = { line } })
+      table.insert(segments, { type = 'divider', lines = { line }, start_offset = offset })
 
     -- Empty lines: end non-paragraph segments, accumulate in paragraph
     elseif line == '' then
@@ -187,12 +190,12 @@ local function split_orphan_by_type_boundaries(lines)
       -- Type change: start new segment
     elseif current_segment and current_segment.type ~= line_type then
       table.insert(segments, current_segment)
-      current_segment = { type = line_type, lines = { line } }
+      current_segment = { type = line_type, lines = { line }, start_offset = offset }
 
     -- Same type or new segment: continue/start
     else
       if not current_segment then
-        current_segment = { type = line_type, lines = {} }
+        current_segment = { type = line_type, lines = {}, start_offset = offset }
       end
       table.insert(current_segment.lines, line)
     end
@@ -219,7 +222,7 @@ function M.create_from_orphans(orphans)
   local blocks = {}
 
   for _, orphan in ipairs(orphans) do
-    -- Split orphan by type boundaries
+    -- Split orphan by type boundaries, getting line offsets for each segment
     local segments = split_orphan_by_type_boundaries(orphan.content)
 
     -- Track after_block_id for positioning - first block uses orphan's after_block_id
@@ -229,11 +232,22 @@ function M.create_from_orphans(orphans)
     for i, segment in ipairs(segments) do
       local block = M.create_from_lines(segment.lines, current_after_id)
       if block then
-        -- Store line range info for positioning
-        -- Note: For split segments, this is approximate
-        block.orphan_start_line = orphan.start_line
-        block.orphan_end_line = orphan.end_line
+        -- Calculate actual line range within buffer
+        -- Bug #10.4 fix: Use segment.start_offset for precise line ranges
+        local segment_start = orphan.start_line + segment.start_offset
+        local segment_end = segment_start + #segment.lines - 1
+
+        block.orphan_start_line = segment_start
+        block.orphan_end_line = segment_end
         block.segment_index = i
+
+        log.debug('Block line range calculated', {
+          segment_index = i,
+          segment_start = segment_start,
+          segment_end = segment_end,
+          line_count = #segment.lines,
+        })
+
         table.insert(blocks, block)
 
         -- Next block should be after this one (using temp_id)

@@ -195,60 +195,137 @@ function M.execute(bufnr, plan, callback)
     end)
   end
 
-  -- Execute creates
-  for _, create in ipairs(plan.creates) do
+  -- Execute creates sequentially (Bug #10.3 fix: chained temp_id resolution)
+  -- Creates must be executed in order because later blocks may reference
+  -- earlier blocks via temp_id for after_block_id positioning
+  local temp_id_to_real_id = {} -- Map temp_id -> real Notion UUID
+
+  --- Check if a string is a temp_id (starts with "temp_")
+  ---@param id string|nil
+  ---@return boolean
+  local function is_temp_id(id)
+    return id ~= nil and id:sub(1, 5) == 'temp_'
+  end
+
+  --- Resolve after_block_id: if it's a temp_id, look up the real ID
+  ---@param after_id string|nil
+  ---@return string|nil resolved_id
+  local function resolve_after_id(after_id)
+    if after_id == nil then
+      return nil
+    end
+    if is_temp_id(after_id) then
+      local real_id = temp_id_to_real_id[after_id]
+      if real_id then
+        log.debug('Resolved temp_id to real ID', { temp_id = after_id, real_id = real_id })
+        return real_id
+      else
+        log.error('Failed to resolve temp_id', { temp_id = after_id })
+        return nil -- Will cause positioning to fail gracefully
+      end
+    end
+    return after_id
+  end
+
+  --- Execute creates one by one to maintain dependency order
+  ---@param index integer Current index in plan.creates
+  local function execute_create(index)
+    if index > #plan.creates then
+      return -- All creates done
+    end
+
+    local create = plan.creates[index]
+
     -- Validate page_id before attempting create
     if not page_id then
       log.error('Cannot create block: page_id not found', { temp_id = create.temp_id })
       table.insert(errors, 'Cannot create block: page_id not found')
       check_done()
-    else
-      log.info('Executing create', {
-        temp_id = create.temp_id,
-        block_type = create.block_type,
-        after_block_id = create.after_block_id,
-        content_preview = create.content:sub(1, 50),
-      })
+      execute_create(index + 1)
+      return
+    end
 
-      -- Serialize block for API
-      local block_json = model.serialize_block(create.block)
+    -- Resolve after_block_id (convert temp_id to real UUID if needed)
+    local resolved_after_id = resolve_after_id(create.after_block_id)
 
-      blocks_api.append(page_id, { block_json }, function(result)
-        if result.error then
-          log.error('Create failed', {
+    log.info('Executing create', {
+      temp_id = create.temp_id,
+      block_type = create.block_type,
+      after_block_id = create.after_block_id,
+      resolved_after_id = resolved_after_id,
+      content_preview = create.content:sub(1, 50),
+    })
+
+    -- Serialize block for API
+    local block_json = model.serialize_block(create.block)
+
+    blocks_api.append(page_id, { block_json }, function(result)
+      if result.error then
+        log.error('Create failed', {
+          temp_id = create.temp_id,
+          error = result.error,
+        })
+        table.insert(errors, 'Create failed for block ' .. (create.temp_id or 'unknown') .. ': ' .. result.error)
+      else
+        -- Update block with real Notion ID from response
+        local new_block = result.blocks and result.blocks[1]
+        if new_block and new_block.id then
+          log.info('Create succeeded', {
             temp_id = create.temp_id,
-            error = result.error,
+            new_id = new_block.id,
           })
-          table.insert(errors, 'Create failed for block ' .. (create.temp_id or 'unknown') .. ': ' .. result.error)
-        else
-          -- Update block with real Notion ID from response
-          local new_block = result.blocks and result.blocks[1]
-          if new_block and new_block.id then
-            log.info('Create succeeded', {
+
+          -- Store temp_id -> real_id mapping for subsequent blocks
+          if create.temp_id then
+            temp_id_to_real_id[create.temp_id] = new_block.id
+            log.debug('Stored temp_id mapping', {
+              temp_id = create.temp_id,
+              real_id = new_block.id,
+            })
+          end
+
+          -- Update block's ID
+          create.block.id = new_block.id
+          create.block.raw.id = new_block.id
+
+          -- Clear new block markers
+          create.block.is_new = false
+          create.block.temp_id = nil
+          create.block.after_block_id = nil
+
+          -- Update original text for dirty tracking
+          create.block.original_text = create.block:get_text()
+
+          -- Bug #10.4 fix: Add block to model with extmark
+          -- This prevents the same lines from being detected as orphans again
+          local mapping = require('neotion.model.mapping')
+          local start_line = create.block.orphan_start_line
+          local end_line = create.block.orphan_end_line
+
+          if start_line and end_line then
+            -- Use the resolved after_id (real UUID, not temp_id)
+            mapping.add_block(bufnr, create.block, start_line, end_line, resolved_after_id)
+          else
+            log.warn('Block missing orphan line info, cannot add to model', {
               temp_id = create.temp_id,
               new_id = new_block.id,
             })
-
-            -- Update block's ID
-            create.block.id = new_block.id
-            create.block.raw.id = new_block.id
-
-            -- Clear new block markers
-            create.block.is_new = false
-            create.block.temp_id = nil
-            create.block.after_block_id = nil
-
-            -- Update original text for dirty tracking
-            create.block.original_text = create.block:get_text()
-          else
-            log.warn('Create succeeded but no block ID in response', {
-              temp_id = create.temp_id,
-            })
           end
+        else
+          log.warn('Create succeeded but no block ID in response', {
+            temp_id = create.temp_id,
+          })
         end
-        check_done()
-      end, create.after_block_id)
-    end
+      end
+      check_done()
+      -- Execute next create after this one completes
+      execute_create(index + 1)
+    end, resolved_after_id)
+  end
+
+  -- Start sequential create execution
+  if #plan.creates > 0 then
+    execute_create(1)
   end
 
   -- Execute deletes

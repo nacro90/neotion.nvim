@@ -17,9 +17,15 @@ Editing deneyimini iyilestirmek icin tam bir refactor planliyoruz.
   - Yeni block olusturma ✓
   - Block type detection ✓
 
-- [ ] **Block Type Detection**: Satir icerigi blockin beklenen tipine uymuyor
-  - `# Heading` yazdim ama paragraph olarak kaydediliyor
-  - Detection patterns: `detection.lua`
+- [x] **Block Type Detection**: Satir icerigi blockin beklenen tipine uymuyor
+  - Bug #10.1: First non-empty line type detection ✓
+  - Bug #10.2: Orphan type boundary splitting ✓
+
+- [x] **Chained Block Creation**: Birden fazla yeni block zincirleme olusturulurken temp_id sorunu
+  - Bug #10.3: Sequential create execution with temp_id resolution ✓
+
+- [x] **New Block Model Integration**: Sync sonrasi yeni bloklar model'e eklenmiyordu
+  - Bug #10.4: `mapping.add_block()` ve `rebuild_extmarks()` eklendi ✓
 
 ### New Block Creation
 

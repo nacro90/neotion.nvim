@@ -409,6 +409,109 @@ function M.get_readonly_namespace()
   return readonly_ns_id
 end
 
+---Add a newly created block to the model with extmark
+---Called after sync successfully creates a block in Notion
+---Bug #10.4 fix: Prevents orphan re-detection on subsequent syncs
+---@param bufnr integer Buffer number
+---@param block neotion.Block Block to add
+---@param start_line integer 1-indexed start line in buffer
+---@param end_line integer 1-indexed end line in buffer
+---@param after_block_id string|nil ID of block this block should come after
+function M.add_block(bufnr, block, start_line, end_line, after_block_id)
+  local log = require('neotion.log').get_logger('mapping')
+  local blocks = buffer_blocks[bufnr]
+
+  if not blocks then
+    log.warn('Cannot add block: no blocks array for buffer', { bufnr = bufnr })
+    return
+  end
+
+  -- Find insertion index based on after_block_id
+  local insert_index = #blocks + 1 -- Default: append at end
+
+  if after_block_id then
+    for i, b in ipairs(blocks) do
+      if b:get_id() == after_block_id then
+        insert_index = i + 1
+        break
+      end
+    end
+  end
+
+  -- Set line range on block
+  block:set_line_range(start_line, end_line)
+
+  -- Insert block at correct position
+  table.insert(blocks, insert_index, block)
+
+  log.debug('Block added to model', {
+    block_id = block:get_id(),
+    block_type = block:get_type(),
+    insert_index = insert_index,
+    start_line = start_line,
+    end_line = end_line,
+    after_block_id = after_block_id,
+  })
+
+  -- Recreate extmarks for all blocks (simplest approach for now)
+  -- This ensures proper extmark ordering after insertion
+  if vim.api.nvim_buf_is_valid(bufnr) then
+    M.rebuild_extmarks(bufnr)
+  end
+end
+
+---Rebuild extmarks for all blocks based on their current line ranges
+---Used after adding new blocks to ensure proper extmark tracking
+---@param bufnr integer Buffer number
+function M.rebuild_extmarks(bufnr)
+  local log = require('neotion.log').get_logger('mapping')
+  local blocks = buffer_blocks[bufnr]
+
+  if not blocks then
+    return
+  end
+
+  -- Clear existing extmarks
+  vim.api.nvim_buf_clear_namespace(bufnr, ns_id, 0, -1)
+  vim.api.nvim_buf_clear_namespace(bufnr, readonly_ns_id, 0, -1)
+  block_extmarks[bufnr] = {}
+
+  local total_lines = vim.api.nvim_buf_line_count(bufnr)
+
+  for i, block in ipairs(blocks) do
+    local start_line, end_line = block:get_line_range()
+
+    if start_line and end_line and start_line <= total_lines then
+      local end_row = math.min(end_line, total_lines) - 1 -- 0-indexed
+      local line_content = vim.api.nvim_buf_get_lines(bufnr, end_row, end_row + 1, false)[1] or ''
+
+      local extmark_id = vim.api.nvim_buf_set_extmark(bufnr, ns_id, start_line - 1, 0, {
+        end_row = end_row,
+        end_col = #line_content,
+        right_gravity = true,
+        end_right_gravity = false,
+      })
+      block_extmarks[bufnr][i] = extmark_id
+
+      -- Add read-only highlighting for non-editable blocks
+      if not block:is_editable() then
+        for line = start_line, end_line do
+          vim.api.nvim_buf_set_extmark(bufnr, readonly_ns_id, line - 1, 0, {
+            line_hl_group = 'NeotionReadOnly',
+            priority = 100,
+          })
+        end
+      end
+    end
+  end
+
+  log.debug('Extmarks rebuilt', {
+    bufnr = bufnr,
+    block_count = #blocks,
+    extmark_count = vim.tbl_count(block_extmarks[bufnr] or {}),
+  })
+end
+
 ---@class neotion.OrphanLineRange
 ---@field start_line integer Start line (1-indexed)
 ---@field end_line integer End line (1-indexed)

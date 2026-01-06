@@ -45,6 +45,10 @@ Editing deneyimini iyilestirmek icin tam bir refactor planliyoruz.
 
 ## Known Issues
 
+- [ ] **Multi-line content rendering bug**: `buffer/init.lua:129` - `nvim_buf_set_lines` "replacement string item contains newlines" hatası veriyor
+  - Multi-line block content'i render ederken oluşuyor
+  - Öncelikli fix
+
 - [ ] Block links (`notion://block/id`) desteklenmiyor
 - [ ] Nested list items
 - [ ] Auto-continuation (Enter after list item → new list item)

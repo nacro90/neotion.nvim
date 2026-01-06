@@ -195,11 +195,60 @@ function M.execute(bufnr, plan, callback)
     end)
   end
 
-  -- Execute creates (not implemented in Phase 4)
+  -- Execute creates
   for _, create in ipairs(plan.creates) do
-    -- TODO: Implement block creation in Phase 4.5
-    table.insert(errors, 'Block creation not yet implemented')
-    check_done()
+    -- Validate page_id before attempting create
+    if not page_id then
+      log.error('Cannot create block: page_id not found', { temp_id = create.temp_id })
+      table.insert(errors, 'Cannot create block: page_id not found')
+      check_done()
+    else
+      log.info('Executing create', {
+        temp_id = create.temp_id,
+        block_type = create.block_type,
+        after_block_id = create.after_block_id,
+        content_preview = create.content:sub(1, 50),
+      })
+
+      -- Serialize block for API
+      local block_json = model.serialize_block(create.block)
+
+      blocks_api.append(page_id, { block_json }, function(result)
+      if result.error then
+        log.error('Create failed', {
+          temp_id = create.temp_id,
+          error = result.error,
+        })
+        table.insert(errors, 'Create failed for block ' .. (create.temp_id or 'unknown') .. ': ' .. result.error)
+      else
+        -- Update block with real Notion ID from response
+        local new_block = result.blocks and result.blocks[1]
+        if new_block and new_block.id then
+          log.info('Create succeeded', {
+            temp_id = create.temp_id,
+            new_id = new_block.id,
+          })
+
+          -- Update block's ID
+          create.block.id = new_block.id
+          create.block.raw.id = new_block.id
+
+          -- Clear new block markers
+          create.block.is_new = false
+          create.block.temp_id = nil
+          create.block.after_block_id = nil
+
+          -- Update original text for dirty tracking
+          create.block.original_text = create.block:get_text()
+        else
+          log.warn('Create succeeded but no block ID in response', {
+            temp_id = create.temp_id,
+          })
+        end
+      end
+      check_done()
+      end, create.after_block_id)
+    end
   end
 
   -- Execute deletes

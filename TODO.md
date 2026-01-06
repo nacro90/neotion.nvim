@@ -13,9 +13,9 @@ Editing deneyimini iyilestirmek icin tam bir refactor planliyoruz.
   - `right_gravity = true` ile fix yapildi ama `nvim_buf_set_lines` ile testler bozuldu
   - Gercek kullanici editing (InsertMode) farkli calisiyor
 
-- [ ] **Orphan Lines**: Bloklara ait olmayan satirlar icin strateji belirlenmeli
-  - Yeni block olusturma
-  - Block type detection
+- [x] **Orphan Lines**: Bloklara ait olmayan satirlar icin strateji belirlenmeli
+  - Yeni block olusturma ✓
+  - Block type detection ✓
 
 - [ ] **Block Type Detection**: Satir icerigi blockin beklenen tipine uymuyor
   - `# Heading` yazdim ama paragraph olarak kaydediliyor
@@ -23,10 +23,12 @@ Editing deneyimini iyilestirmek icin tam bir refactor planliyoruz.
 
 ### New Block Creation
 
-- [ ] `o` ile yeni satir → block tipi belirlenmeli (paragraph default)
-- [ ] Type conversion: `- ` yazildi → bulleted_list_item'a donusum
-- [ ] Type conversion: `# ` yazildi → heading'e donusum
-- [ ] `---` → divider olusturma
+- [x] `o` ile yeni satir → block tipi belirlenmeli (paragraph default)
+- [x] Type conversion: `- ` yazildi → bulleted_list_item'a donusum
+- [x] Type conversion: `# ` yazildi → heading'e donusum
+- [x] `---` → divider olusturma
+- [x] Sync API: `blocks_api.append()` ile Notion'a gonderim
+- [x] Positioned insert: `after_block_id` ile dogru pozisyona ekleme
 
 ### Testing Strategy
 

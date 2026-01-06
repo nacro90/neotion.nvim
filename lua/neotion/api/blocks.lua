@@ -263,7 +263,8 @@ end
 ---@param parent_id string Parent page or block ID
 ---@param children table[] Array of block objects to append
 ---@param callback fun(result: neotion.api.AppendResult)
-function M.append(parent_id, children, callback)
+---@param after_block_id string|nil Optional block ID to insert after (for positioning)
+function M.append(parent_id, children, callback, after_block_id)
   local auth = require('neotion.api.auth')
   local throttle = require('neotion.api.throttle')
 
@@ -278,6 +279,11 @@ function M.append(parent_id, children, callback)
   local body = {
     children = children,
   }
+
+  -- Add after parameter for positioned insert
+  if after_block_id then
+    body.after = after_block_id:gsub('-', '')
+  end
 
   throttle.patch('/blocks/' .. normalized_id .. '/children', token_result.token, body, function(response)
     if response.cancelled then

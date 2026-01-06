@@ -27,10 +27,18 @@ Editing deneyimini iyilestirmek icin tam bir refactor planliyoruz.
 - [x] **New Block Model Integration**: Sync sonrasi yeni bloklar model'e eklenmiyordu
   - Bug #10.4: `mapping.add_block()` ve `rebuild_extmarks()` eklendi ✓
 
+- [x] **Zero Blocks Orphan Detection**: Sayfa sifir block ile acildiginda icerik orphan olarak algilanmiyordu
+  - Bug #10.5: `detect_orphan_lines()` sifir block durumunu handle ediyor ✓
+
+- [x] **Batch Block Creation**: Birden fazla block olusturulurken her biri ayri API call yapiyordu
+  - Perf: Zincirleme block'lar tek `append` request'inde batch olarak gonderiliyor ✓
+  - 5 block = 5 request → 5 block = 1 request
+
 ### New Block Creation
 
 - [x] `o` ile yeni satir → block tipi belirlenmeli (paragraph default)
 - [x] Type conversion: `- ` yazildi → bulleted_list_item'a donusum
+- [x] Type conversion: `1. ` yazildi → numbered_list_item'a donusum
 - [x] Type conversion: `# ` yazildi → heading'e donusum
 - [x] `---` → divider olusturma
 - [x] Sync API: `blocks_api.append()` ile Notion'a gonderim

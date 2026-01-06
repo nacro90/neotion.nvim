@@ -159,6 +159,22 @@ describe('neotion.model.blocks.heading', function()
 
       assert.are.equal('  # Indented', lines[1])
     end)
+
+    it('should handle multi-line content (soft breaks from Notion)', function()
+      local raw = {
+        id = 'test',
+        type = 'heading_1',
+        heading_1 = { rich_text = { { plain_text = 'Main Title\nSubtitle line' } } },
+      }
+      local block = heading_module.new(raw)
+
+      local lines = block:format()
+
+      -- First line gets heading prefix, continuation lines are indented
+      assert.are.equal(2, #lines)
+      assert.are.equal('# Main Title', lines[1])
+      assert.are.equal('  Subtitle line', lines[2])
+    end)
   end)
 
   describe('serialize', function()

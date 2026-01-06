@@ -164,6 +164,25 @@ describe('neotion.model.blocks.quote', function()
       -- Should have prefix and formatted content
       assert.truthy(lines[1]:match('^| '))
     end)
+
+    it('should handle multi-line content (soft breaks from Notion)', function()
+      local raw = {
+        id = 'test',
+        type = 'quote',
+        quote = {
+          rich_text = { { plain_text = 'Line 1\nLine 2\nLine 3' } },
+        },
+      }
+
+      local block = quote_module.new(raw)
+      local lines = block:format()
+
+      -- Each line should have the quote prefix
+      assert.are.equal(3, #lines)
+      assert.are.equal('| Line 1', lines[1])
+      assert.are.equal('| Line 2', lines[2])
+      assert.are.equal('| Line 3', lines[3])
+    end)
   end)
 
   describe('QuoteBlock:serialize', function()

@@ -141,6 +141,25 @@ describe('neotion.model.blocks.bulleted_list', function()
 
       assert.are.equal('- ', lines[1])
     end)
+
+    it('should handle multi-line content (soft breaks from Notion)', function()
+      local raw = {
+        id = 'test',
+        type = 'bulleted_list_item',
+        bulleted_list_item = {
+          rich_text = { { plain_text = 'First line\nContinuation\nMore content' } },
+        },
+      }
+
+      local block = bulleted_list_module.new(raw)
+      local lines = block:format()
+
+      -- First line gets bullet prefix, continuation lines are indented
+      assert.are.equal(3, #lines)
+      assert.are.equal('- First line', lines[1])
+      assert.are.equal('  Continuation', lines[2])
+      assert.are.equal('  More content', lines[3])
+    end)
   end)
 
   describe('BulletedListBlock:serialize', function()

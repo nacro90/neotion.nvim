@@ -78,6 +78,7 @@ function HeadingBlock:type_changed()
 end
 
 ---Format heading to buffer lines
+---Handles multi-line content (soft breaks from Notion) - first line gets heading prefix, rest are indented
 ---@param opts? {indent?: integer, indent_size?: integer}
 ---@return string[]
 function HeadingBlock:format(opts)
@@ -86,8 +87,26 @@ function HeadingBlock:format(opts)
   local indent_size = opts.indent_size or 2
   local prefix = string.rep(' ', indent * indent_size)
   local heading_prefix = string.rep('#', self.level) .. ' '
+  -- Continuation lines get 2-space indent to align with heading content
+  local continuation_prefix = prefix .. '  '
 
-  return { prefix .. heading_prefix .. self.text }
+  if self.text == '' then
+    return { prefix .. heading_prefix }
+  end
+
+  -- Handle multi-line content (soft breaks from Notion)
+  local lines = {}
+  local is_first = true
+  for line in (self.text .. '\n'):gmatch('([^\n]*)\n') do
+    if is_first then
+      table.insert(lines, prefix .. heading_prefix .. line)
+      is_first = false
+    else
+      table.insert(lines, continuation_prefix .. line)
+    end
+  end
+
+  return lines
 end
 
 ---Serialize heading to Notion API JSON

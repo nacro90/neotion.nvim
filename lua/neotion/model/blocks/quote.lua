@@ -67,10 +67,21 @@ function QuoteBlock.new(raw)
 end
 
 ---Format quote to buffer lines
+---Handles multi-line content (soft breaks from Notion) by adding prefix to each line
 ---@param opts? {indent?: integer, indent_size?: integer}
 ---@return string[]
 function QuoteBlock:format(opts)
-  return { QUOTE_PREFIX .. self.text }
+  if self.text == '' then
+    return { QUOTE_PREFIX }
+  end
+
+  -- Handle multi-line content (soft breaks from Notion)
+  local lines = {}
+  for line in (self.text .. '\n'):gmatch('([^\n]*)\n') do
+    table.insert(lines, QUOTE_PREFIX .. line)
+  end
+
+  return lines
 end
 
 ---Serialize quote to Notion API JSON

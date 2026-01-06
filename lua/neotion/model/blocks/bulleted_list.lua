@@ -91,10 +91,30 @@ function BulletedListBlock.new(raw)
 end
 
 ---Format bullet to buffer lines
+---Handles multi-line content (soft breaks from Notion) - first line gets bullet prefix, rest are indented
 ---@param opts? {indent?: integer, indent_size?: integer}
 ---@return string[]
 function BulletedListBlock:format(opts)
-  return { BULLET_PREFIX .. self.text }
+  -- Continuation lines get 2-space indent to align with bullet content
+  local continuation_prefix = '  '
+
+  if self.text == '' then
+    return { BULLET_PREFIX }
+  end
+
+  -- Handle multi-line content (soft breaks from Notion)
+  local lines = {}
+  local is_first = true
+  for line in (self.text .. '\n'):gmatch('([^\n]*)\n') do
+    if is_first then
+      table.insert(lines, BULLET_PREFIX .. line)
+      is_first = false
+    else
+      table.insert(lines, continuation_prefix .. line)
+    end
+  end
+
+  return lines
 end
 
 ---Serialize bullet to Notion API JSON

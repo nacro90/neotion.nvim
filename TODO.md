@@ -59,10 +59,49 @@ Editing deneyimini iyilestirmek icin tam bir refactor planliyoruz.
 - [ ] Nested list items
 - [ ] Auto-continuation (Enter after list item → new list item)
 - [ ] Extmark + `nvim_buf_set_lines` interaction issues (testler pending)
+- [ ] **Color tags not syncing to Notion**: `<c:red>text</c>` buffer formatı Notion'a gönderilirken rich_text color annotation'a dönüştürülmüyor
+  - Buffer → Notion serialize işlemi color tag'leri parse etmeli
+  - `format/notion.lua` veya `model/rich_text.lua` içinde fix gerekebilir
 
-## Future
+## Block Type Support Roadmap
 
-- [ ] Toggle block support
-- [ ] Table block support
-- [ ] Image/file block support
-- [ ] Database views
+Basitten karmasiga dogru block tipi destegi:
+
+### Desteklenen (Editable)
+- [x] paragraph
+- [x] heading_1, heading_2, heading_3
+- [x] bulleted_list_item
+- [x] quote
+- [x] code
+
+### Desteklenen (Read-only)
+- [x] divider
+- [x] callout
+- [x] toggle (icerik gizli)
+
+### Tier 1: Basit Text-based
+- [ ] **numbered_list_item** - bulleted_list_item ile neredeyse ayni, `1. ` prefix
+- [ ] **to_do** - checkbox, `[ ]` / `[x]` prefix + checked state
+
+### Tier 2: Orta Karmasiklik
+- [ ] **callout** (editable) - icon + color + text, simdilik read-only
+- [ ] **toggle** (editable) - children block'lari goster/gizle
+- [ ] **bookmark** - URL + title + description
+- [ ] **equation** - LaTeX math, KaTeX rendering
+
+### Tier 3: Karmasik
+- [ ] **table** - satir/sutun, table_row children
+- [ ] **column_list** / **column** - yan yana layout
+- [ ] **synced_block** - baska sayfadan referans
+
+### Tier 4: Media & Embeds
+- [ ] **image** - URL veya uploaded
+- [ ] **video** - embed URL
+- [ ] **file** / **pdf** - attachment
+- [ ] **embed** - external content (iframe)
+
+### Tier 5: Advanced
+- [ ] **database** views (inline/full page)
+- [ ] **link_to_page** - sayfa referansi
+- [ ] **table_of_contents**
+- [ ] **breadcrumb**

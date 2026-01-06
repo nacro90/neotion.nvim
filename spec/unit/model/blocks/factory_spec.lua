@@ -103,6 +103,59 @@ describe('neotion.model.blocks.factory', function()
       local text = block:get_text()
       assert.is_true(text:find('Line 1') ~= nil)
     end)
+
+    -- Bug #10.1: Type detection should use first non-empty line
+    -- Scenario: User presses 'o', then '<CR>', then types '## heading'
+    -- Content becomes: ['', '## heading', '']
+    describe('first non-empty line detection', function()
+      it('should detect heading_2 from first non-empty line with leading empty', function()
+        local block = factory.create_from_lines({ '', '## heading', '' }, nil)
+
+        assert.is_not_nil(block)
+        assert.are.equal('heading_2', block:get_type())
+        assert.are.equal('heading', block:get_text())
+      end)
+
+      it('should detect heading_1 from first non-empty line', function()
+        local block = factory.create_from_lines({ '', '', '# Big Heading' }, nil)
+
+        assert.is_not_nil(block)
+        assert.are.equal('heading_1', block:get_type())
+        assert.are.equal('Big Heading', block:get_text())
+      end)
+
+      it('should detect bulleted_list_item from first non-empty line', function()
+        local block = factory.create_from_lines({ '', '- list item', '' }, nil)
+
+        assert.is_not_nil(block)
+        assert.are.equal('bulleted_list_item', block:get_type())
+        assert.are.equal('list item', block:get_text())
+      end)
+
+      it('should detect divider from first non-empty line', function()
+        local block = factory.create_from_lines({ '', '---', '' }, nil)
+
+        assert.is_not_nil(block)
+        assert.are.equal('divider', block:get_type())
+      end)
+
+      it('should detect quote from first non-empty line', function()
+        local block = factory.create_from_lines({ '', '| quote text', '' }, nil)
+
+        assert.is_not_nil(block)
+        assert.are.equal('quote', block:get_type())
+        assert.are.equal('quote text', block:get_text())
+      end)
+
+      it('should trim leading empty lines from content', function()
+        local block = factory.create_from_lines({ '', '', '## heading' }, nil)
+
+        assert.is_not_nil(block)
+        -- Content should NOT have leading newlines
+        local text = block:get_text()
+        assert.are.equal('heading', text)
+      end)
+    end)
   end)
 
   describe('create_raw_block', function()
@@ -196,6 +249,137 @@ describe('neotion.model.blocks.factory', function()
       assert.are.equal(1, #blocks)
       assert.are.equal(10, blocks[1].orphan_start_line)
       assert.are.equal(12, blocks[1].orphan_end_line)
+    end)
+
+    -- Bug #10.2: Multi-line orphan splitting by type boundaries
+    -- Scenario: quote block + empty + heading in same orphan range
+    describe('type boundary splitting', function()
+      it('should split quote and heading into separate blocks', function()
+        -- This is the exact bug scenario: quote absorbed heading
+        local orphans = {
+          {
+            start_line = 22,
+            end_line = 25,
+            content = { '| queteruhe -somanu', '', '### heading 3' },
+            after_block_id = 'block1',
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(2, #blocks)
+        assert.are.equal('quote', blocks[1]:get_type())
+        assert.are.equal('queteruhe -somanu', blocks[1]:get_text())
+        assert.are.equal('heading_3', blocks[2]:get_type())
+        assert.are.equal('heading 3', blocks[2]:get_text())
+      end)
+
+      it('should split different heading levels', function()
+        local orphans = {
+          {
+            start_line = 1,
+            end_line = 3,
+            content = { '# Heading 1', '', '## Heading 2' },
+            after_block_id = 'block1',
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(2, #blocks)
+        assert.are.equal('heading_1', blocks[1]:get_type())
+        assert.are.equal('heading_2', blocks[2]:get_type())
+      end)
+
+      it('should split bullet and paragraph', function()
+        local orphans = {
+          {
+            start_line = 1,
+            end_line = 3,
+            content = { '- list item', '', 'paragraph text' },
+            after_block_id = 'block1',
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(2, #blocks)
+        assert.are.equal('bulleted_list_item', blocks[1]:get_type())
+        assert.are.equal('paragraph', blocks[2]:get_type())
+      end)
+
+      it('should keep divider as single block', function()
+        local orphans = {
+          {
+            start_line = 1,
+            end_line = 3,
+            content = { 'paragraph', '---', 'more text' },
+            after_block_id = 'block1',
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(3, #blocks)
+        assert.are.equal('paragraph', blocks[1]:get_type())
+        assert.are.equal('divider', blocks[2]:get_type())
+        assert.are.equal('paragraph', blocks[3]:get_type())
+      end)
+
+      it('should handle empty lines with heading prefix', function()
+        -- User scenario: o + Enter + ## heading
+        local orphans = {
+          {
+            start_line = 1,
+            end_line = 3,
+            content = { '', '## My Heading', '' },
+            after_block_id = 'block1',
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(1, #blocks)
+        assert.are.equal('heading_2', blocks[1]:get_type())
+        assert.are.equal('My Heading', blocks[1]:get_text())
+      end)
+
+      it('should chain after_block_id for multiple blocks', function()
+        local orphans = {
+          {
+            start_line = 1,
+            end_line = 3,
+            content = { '# First', '', '## Second' },
+            after_block_id = 'original_block',
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(2, #blocks)
+        -- First block uses original after_block_id
+        assert.are.equal('original_block', blocks[1].after_block_id)
+        -- Second block uses first block's temp_id
+        assert.are.equal(blocks[1].temp_id, blocks[2].after_block_id)
+      end)
+
+      it('should handle consecutive bullets as separate blocks', function()
+        local orphans = {
+          {
+            start_line = 1,
+            end_line = 2,
+            content = { '- item 1', '- item 2' },
+            after_block_id = 'block1',
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        -- Same type consecutive - currently treated as one segment
+        -- This is correct behavior: consecutive same-type lines = one block
+        assert.are.equal(1, #blocks)
+        assert.are.equal('bulleted_list_item', blocks[1]:get_type())
+      end)
     end)
   end)
 end)

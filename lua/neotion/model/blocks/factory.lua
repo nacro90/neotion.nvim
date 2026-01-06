@@ -24,47 +24,59 @@ function M.create_from_lines(lines, after_block_id)
   local detection = require('neotion.model.blocks.detection')
   local registry = require('neotion.model.registry')
 
-  -- Get first line for type detection
-  local first_line = lines[1] or ''
-
-  -- Skip empty lines (they don't create blocks)
-  local all_empty = true
-  for _, line in ipairs(lines) do
+  -- Find first non-empty line for type detection (Bug #10.1 fix)
+  -- Scenario: User presses 'o', '<CR>', then types '## heading'
+  -- Content = ['', '## heading', ''] - first line is empty
+  local type_detection_line = nil
+  local type_detection_index = nil
+  for i, line in ipairs(lines) do
     if line ~= '' then
-      all_empty = false
+      type_detection_line = line
+      type_detection_index = i
       break
     end
   end
 
-  if all_empty then
+  -- Skip if all lines are empty
+  if not type_detection_line then
     log.debug('Skipping empty orphan lines', { line_count = #lines })
     return nil
   end
 
-  -- Detect block type from first line content
-  local detected_type, prefix = detection.detect_type(first_line)
+  -- Detect block type from first non-empty line content
+  local detected_type, prefix = detection.detect_type(type_detection_line)
   local block_type = detected_type or 'paragraph'
 
   log.debug('Detected block type for orphan', {
-    first_line = first_line:sub(1, 50),
+    type_detection_line = type_detection_line:sub(1, 50),
+    type_detection_index = type_detection_index,
     detected_type = detected_type,
     prefix = prefix,
     final_type = block_type,
   })
 
-  -- Strip prefix from content if needed
+  -- Build content, trimming leading empty lines and stripping prefix from type line
+  -- Content should start from the type detection line
   local content
-  if #lines == 1 then
-    content = detection.strip_prefix(first_line, prefix)
-  else
-    -- Multi-line content: strip prefix from first line, join all
-    local processed_lines = {}
-    processed_lines[1] = detection.strip_prefix(lines[1], prefix)
-    for i = 2, #lines do
-      processed_lines[i] = lines[i]
+  local content_lines = {}
+
+  -- Start from type detection index, skip leading empty lines
+  for i = type_detection_index, #lines do
+    local line = lines[i]
+    if i == type_detection_index then
+      -- Strip prefix from the type detection line
+      table.insert(content_lines, detection.strip_prefix(line, prefix))
+    else
+      table.insert(content_lines, line)
     end
-    content = table.concat(processed_lines, '\n')
   end
+
+  -- Trim trailing empty lines for cleaner content
+  while #content_lines > 0 and content_lines[#content_lines] == '' do
+    table.remove(content_lines)
+  end
+
+  content = table.concat(content_lines, '\n')
 
   -- Create minimal raw data structure for new block
   local raw = M.create_raw_block(block_type, content)
@@ -136,19 +148,97 @@ function M.create_raw_block(block_type, content)
   return raw
 end
 
+--- Split orphan lines into segments by type boundaries
+--- Different block types (quote, heading, bullet, divider) become separate blocks
+--- Bug #10.2 fix: Prevents mixing different types into single block
+---@param lines string[] Lines to split
+---@return {lines: string[], type: string|nil}[] segments Split segments
+local function split_orphan_by_type_boundaries(lines)
+  local detection = require('neotion.model.blocks.detection')
+  local segments = {}
+  local current_segment = nil
+
+  for _, line in ipairs(lines) do
+    local line_type = detection.detect_type(line)
+    -- nil means paragraph (no special prefix)
+
+    -- Dividers are ALWAYS single-line blocks
+    if line_type == 'divider' then
+      if current_segment then
+        table.insert(segments, current_segment)
+        current_segment = nil
+      end
+      table.insert(segments, { type = 'divider', lines = { line } })
+
+    -- Empty lines: end non-paragraph segments, accumulate in paragraph
+    elseif line == '' then
+      if current_segment then
+        if current_segment.type ~= nil then
+          -- End non-paragraph segment (heading, quote, bullet)
+          table.insert(segments, current_segment)
+          current_segment = nil
+        else
+          -- Paragraph can have empty lines (will be trimmed later)
+          table.insert(current_segment.lines, line)
+        end
+      end
+      -- Skip leading empty lines (no current segment)
+
+      -- Type change: start new segment
+    elseif current_segment and current_segment.type ~= line_type then
+      table.insert(segments, current_segment)
+      current_segment = { type = line_type, lines = { line } }
+
+    -- Same type or new segment: continue/start
+    else
+      if not current_segment then
+        current_segment = { type = line_type, lines = {} }
+      end
+      table.insert(current_segment.lines, line)
+    end
+  end
+
+  -- Don't forget last segment
+  if current_segment then
+    table.insert(segments, current_segment)
+  end
+
+  log.debug('Split orphan into segments', {
+    line_count = #lines,
+    segment_count = #segments,
+  })
+
+  return segments
+end
+
 --- Create blocks from orphan line ranges
+--- Now splits multi-line orphans by type boundaries (Bug #10.2 fix)
 ---@param orphans neotion.OrphanLineRange[] Orphan line ranges from mapping.detect_orphan_lines
 ---@return neotion.Block[] blocks New block instances
 function M.create_from_orphans(orphans)
   local blocks = {}
 
   for _, orphan in ipairs(orphans) do
-    local block = M.create_from_lines(orphan.content, orphan.after_block_id)
-    if block then
-      -- Store line range info for positioning
-      block.orphan_start_line = orphan.start_line
-      block.orphan_end_line = orphan.end_line
-      table.insert(blocks, block)
+    -- Split orphan by type boundaries
+    local segments = split_orphan_by_type_boundaries(orphan.content)
+
+    -- Track after_block_id for positioning - first block uses orphan's after_block_id
+    -- subsequent blocks should be after the previous created block (handled by caller)
+    local current_after_id = orphan.after_block_id
+
+    for i, segment in ipairs(segments) do
+      local block = M.create_from_lines(segment.lines, current_after_id)
+      if block then
+        -- Store line range info for positioning
+        -- Note: For split segments, this is approximate
+        block.orphan_start_line = orphan.start_line
+        block.orphan_end_line = orphan.end_line
+        block.segment_index = i
+        table.insert(blocks, block)
+
+        -- Next block should be after this one (using temp_id)
+        current_after_id = block.temp_id
+      end
     end
   end
 

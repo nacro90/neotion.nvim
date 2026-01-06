@@ -1022,5 +1022,85 @@ describe('neotion.model.mapping', function()
       assert.are.equal('New content typed by user', orphans[1].content[1])
       assert.are.equal('div1', orphans[1].after_block_id, 'Orphan should be after divider')
     end)
+
+    -- Bug #10.2: Empty block with o + Enter + content scenario
+    -- This tests the exact user scenario that caused 1 delete + 1 create
+    it('should handle o then Enter then typed content without false deletion', function()
+      -- Simulate the exact scenario:
+      -- 1. User is on a text block
+      -- 2. Press 'o' to create new line below (orphan)
+      -- 3. Press '<CR>' to add another empty line
+      -- 4. Type '## heading'
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'Existing content'),
+        create_typed_block('para2', 'paragraph', 'More content'),
+      }
+
+      blocks[1]:set_line_range(1, 1)
+      blocks[2]:set_line_range(2, 2)
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'Existing content',
+        'More content',
+      })
+
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- Simulate 'o' after first paragraph: insert at position 2 (after line 1)
+      -- Due to right_gravity=true, extmark stays before the insertion
+      vim.api.nvim_buf_set_lines(bufnr, 1, 1, false, { '' })
+
+      -- Now buffer is:
+      -- Line 1: Existing content
+      -- Line 2: (empty - new orphan line)
+      -- Line 3: More content
+
+      mapping.refresh_line_ranges(bufnr)
+
+      -- Simulate pressing '<CR>' (another empty line)
+      vim.api.nvim_buf_set_lines(bufnr, 2, 2, false, { '' })
+
+      -- Now buffer is:
+      -- Line 1: Existing content
+      -- Line 2: (empty)
+      -- Line 3: (empty)
+      -- Line 4: More content
+
+      mapping.refresh_line_ranges(bufnr)
+
+      -- Simulate typing '## heading'
+      vim.api.nvim_buf_set_lines(bufnr, 2, 3, false, { '## heading' })
+
+      -- Now buffer is:
+      -- Line 1: Existing content
+      -- Line 2: (empty)
+      -- Line 3: ## heading
+      -- Line 4: More content
+
+      mapping.refresh_line_ranges(bufnr)
+
+      -- Both original blocks should still have valid ranges
+      local start1, end1 = blocks[1]:get_line_range()
+      local start2, end2 = blocks[2]:get_line_range()
+
+      -- First block should still be at line 1
+      assert.are.equal(1, start1, 'First block should still be at line 1')
+      assert.are.equal(1, end1)
+
+      -- Second block should have moved to line 4
+      assert.are.equal(4, start2, 'Second block should have moved to line 4')
+      assert.are.equal(4, end2)
+
+      -- No blocks should be marked as deleted (nil range)
+      assert.is_not_nil(start1, 'First block should not be deleted')
+      assert.is_not_nil(start2, 'Second block should not be deleted')
+
+      -- Orphan detection should find lines 2-3 as orphan range
+      local orphans = mapping.detect_orphan_lines(bufnr, 0)
+      assert.are.equal(1, #orphans, 'Should detect 1 orphan range')
+      assert.are.equal(2, orphans[1].start_line)
+      assert.are.equal(3, orphans[1].end_line)
+    end)
   end)
 end)

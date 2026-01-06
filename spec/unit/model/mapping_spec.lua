@@ -703,4 +703,229 @@ describe('neotion.model.mapping', function()
       assert.are.equal(2, para2_end)
     end)
   end)
+
+  describe('detect_orphan_lines', function()
+    -- Helper to create typed mock block
+    local function create_typed_block(id, block_type, content)
+      local block = {
+        id = id,
+        type = block_type,
+        content = content or '',
+        editable = block_type ~= 'divider' and block_type ~= 'toggle',
+        dirty = false,
+        line_start = nil,
+        line_end = nil,
+        get_id = function(self)
+          return self.id
+        end,
+        get_type = function(self)
+          return self.type
+        end,
+        is_editable = function(self)
+          return self.editable
+        end,
+        is_dirty = function(self)
+          return self.dirty
+        end,
+        set_dirty = function(self, value)
+          self.dirty = value
+        end,
+        set_line_range = function(self, start_line, end_line)
+          self.line_start = start_line
+          self.line_end = end_line
+        end,
+        get_line_range = function(self)
+          return self.line_start, self.line_end
+        end,
+        contains_line = function(self, line)
+          if not self.line_start or not self.line_end then
+            return false
+          end
+          return line >= self.line_start and line <= self.line_end
+        end,
+        format = function(self)
+          if self.type == 'divider' then
+            return { '---' }
+          elseif self.type == 'paragraph' then
+            return { self.content or '' }
+          else
+            return { self.content or '' }
+          end
+        end,
+      }
+      return block
+    end
+
+    it('should return empty when no orphan lines exist', function()
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'Line 1'),
+        create_typed_block('para2', 'paragraph', 'Line 2'),
+      }
+      blocks[1]:set_line_range(1, 1)
+      blocks[2]:set_line_range(2, 2)
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'Line 1',
+        'Line 2',
+      })
+
+      mapping.setup(bufnr, blocks)
+
+      local orphans = mapping.detect_orphan_lines(bufnr, 0)
+      assert.are.equal(0, #orphans)
+    end)
+
+    it('should detect orphan line between blocks', function()
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'First'),
+        create_typed_block('para2', 'paragraph', 'Third'),
+      }
+      blocks[1]:set_line_range(1, 1)
+      blocks[2]:set_line_range(3, 3)
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'First',
+        'New orphan line',
+        'Third',
+      })
+
+      mapping.setup(bufnr, blocks)
+
+      local orphans = mapping.detect_orphan_lines(bufnr, 0)
+      assert.are.equal(1, #orphans)
+      assert.are.equal(2, orphans[1].start_line)
+      assert.are.equal(2, orphans[1].end_line)
+    end)
+
+    it('should detect orphan line at end of buffer', function()
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'First'),
+      }
+      blocks[1]:set_line_range(1, 1)
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'First',
+        'Orphan at end',
+      })
+
+      mapping.setup(bufnr, blocks)
+
+      local orphans = mapping.detect_orphan_lines(bufnr, 0)
+      assert.are.equal(1, #orphans)
+      assert.are.equal(2, orphans[1].start_line)
+      assert.are.equal(2, orphans[1].end_line)
+    end)
+
+    it('should detect multiple consecutive orphan lines as single range', function()
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'First'),
+        create_typed_block('para2', 'paragraph', 'Last'),
+      }
+      blocks[1]:set_line_range(1, 1)
+      blocks[2]:set_line_range(5, 5)
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'First',
+        'Orphan 1',
+        'Orphan 2',
+        'Orphan 3',
+        'Last',
+      })
+
+      mapping.setup(bufnr, blocks)
+
+      local orphans = mapping.detect_orphan_lines(bufnr, 0)
+      assert.are.equal(1, #orphans)
+      assert.are.equal(2, orphans[1].start_line)
+      assert.are.equal(4, orphans[1].end_line)
+    end)
+
+    it('should detect multiple separate orphan ranges', function()
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'Block 1'),
+        create_typed_block('para2', 'paragraph', 'Block 2'),
+        create_typed_block('para3', 'paragraph', 'Block 3'),
+      }
+      blocks[1]:set_line_range(1, 1)
+      blocks[2]:set_line_range(3, 3)
+      blocks[3]:set_line_range(5, 5)
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'Block 1',
+        'Orphan A',
+        'Block 2',
+        'Orphan B',
+        'Block 3',
+      })
+
+      mapping.setup(bufnr, blocks)
+
+      local orphans = mapping.detect_orphan_lines(bufnr, 0)
+      assert.are.equal(2, #orphans)
+      assert.are.equal(2, orphans[1].start_line)
+      assert.are.equal(2, orphans[1].end_line)
+      assert.are.equal(4, orphans[2].start_line)
+      assert.are.equal(4, orphans[2].end_line)
+    end)
+
+    it('should respect header_lines offset', function()
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'Content'),
+      }
+      blocks[1]:set_line_range(4, 4) -- After 3 header lines
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'Header 1',
+        'Header 2',
+        'Header 3',
+        'Content',
+        'Orphan line',
+      })
+
+      mapping.setup(bufnr, blocks)
+
+      local orphans = mapping.detect_orphan_lines(bufnr, 3) -- 3 header lines
+      assert.are.equal(1, #orphans)
+      assert.are.equal(5, orphans[1].start_line)
+    end)
+
+    it('should include line content in orphan info', function()
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'First'),
+      }
+      blocks[1]:set_line_range(1, 1)
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'First',
+        '# New Heading',
+      })
+
+      mapping.setup(bufnr, blocks)
+
+      local orphans = mapping.detect_orphan_lines(bufnr, 0)
+      assert.are.equal(1, #orphans)
+      assert.are.equal('# New Heading', orphans[1].content[1])
+    end)
+
+    it('should include previous block id for positioning', function()
+      local blocks = {
+        create_typed_block('block1', 'paragraph', 'First'),
+        create_typed_block('block2', 'paragraph', 'Third'),
+      }
+      blocks[1]:set_line_range(1, 1)
+      blocks[2]:set_line_range(3, 3)
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'First',
+        'Orphan',
+        'Third',
+      })
+
+      mapping.setup(bufnr, blocks)
+
+      local orphans = mapping.detect_orphan_lines(bufnr, 0)
+      assert.are.equal(1, #orphans)
+      assert.are.equal('block1', orphans[1].after_block_id)
+    end)
+  end)
 end)

@@ -127,13 +127,17 @@ function M.set_content(bufnr, lines)
   local was_modifiable = vim.bo[bufnr].modifiable
   vim.api.nvim_set_option_value('modifiable', true, { buf = bufnr })
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-  -- Keep buffer writable for editing (read-only blocks protected by InsertEnter autocmd)
+  -- Keep buffer writable for editing (read-only blocks protected by protection module)
   vim.api.nvim_set_option_value('modifiable', true, { buf = bufnr })
   vim.api.nvim_set_option_value('modified', false, { buf = bufnr })
 
   -- Attach render system for inline formatting
   local render = require('neotion.render')
   render.attach(bufnr)
+
+  -- Setup protection for read-only blocks (after render sets up extmarks)
+  local protection = require('neotion.buffer.protection')
+  protection.setup(bufnr)
 end
 
 ---Check if buffer is a neotion buffer

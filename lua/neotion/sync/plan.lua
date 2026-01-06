@@ -11,9 +11,11 @@ local log = require('neotion.log').get_logger('sync.plan')
 ---@field content string New content
 
 ---@class neotion.SyncPlanCreate
+---@field block neotion.Block Block instance
 ---@field content string Content for new block
 ---@field block_type string Type of block to create
 ---@field after_block_id string|nil Insert after this block (nil = start of page)
+---@field temp_id string Temporary local ID for tracking
 
 ---@class neotion.SyncPlanDelete
 ---@field block_id string Block ID to delete
@@ -63,6 +65,38 @@ function M.create(bufnr)
   -- Sync buffer content to blocks first
   log.debug('Syncing buffer content to blocks')
   model.sync_blocks_from_buffer(bufnr)
+
+  -- Detect orphan lines (new content not belonging to any block)
+  local mapping = require('neotion.model.mapping')
+  local factory = require('neotion.model.blocks.factory')
+  local buffer = require('neotion.buffer')
+
+  -- Get header line count from buffer data
+  local buf_data = buffer.get_data(bufnr)
+  local header_lines = buf_data and buf_data.header_lines or 6 -- Default header line count
+
+  local orphans = mapping.detect_orphan_lines(bufnr, header_lines)
+  if #orphans > 0 then
+    log.debug('Found orphan lines', { count = #orphans })
+
+    -- Create blocks for orphan lines
+    local new_blocks = factory.create_from_orphans(orphans)
+    for _, block in ipairs(new_blocks) do
+      table.insert(plan.creates, {
+        block = block,
+        content = block:get_text(),
+        block_type = block:get_type(),
+        after_block_id = block.after_block_id,
+        temp_id = block.temp_id,
+      })
+      log.info('New block to create from orphan', {
+        temp_id = block.temp_id,
+        block_type = block:get_type(),
+        after_block_id = block.after_block_id,
+        content_preview = block:get_text():sub(1, 30),
+      })
+    end
+  end
 
   -- Check for deleted blocks (line_range is nil)
   local all_blocks = model.get_blocks(bufnr)

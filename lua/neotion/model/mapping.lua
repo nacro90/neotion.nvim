@@ -409,4 +409,93 @@ function M.get_readonly_namespace()
   return readonly_ns_id
 end
 
+---@class neotion.OrphanLineRange
+---@field start_line integer Start line (1-indexed)
+---@field end_line integer End line (1-indexed)
+---@field content string[] Line contents
+---@field after_block_id string|nil ID of block before this orphan range
+
+---Detect lines not owned by any block (orphan lines)
+---These are lines created by user editing that don't belong to any existing block
+---@param bufnr integer Buffer number
+---@param header_lines integer Number of header lines to skip
+---@return neotion.OrphanLineRange[] List of orphan line ranges
+function M.detect_orphan_lines(bufnr, header_lines)
+  local log = require('neotion.log').get_logger('mapping')
+  local blocks = buffer_blocks[bufnr]
+
+  if not blocks or #blocks == 0 then
+    return {}
+  end
+
+  local total_lines = vim.api.nvim_buf_line_count(bufnr)
+  local start_line = header_lines + 1 -- First content line after header
+
+  log.debug('detect_orphan_lines starting', {
+    bufnr = bufnr,
+    header_lines = header_lines,
+    total_lines = total_lines,
+    block_count = #blocks,
+  })
+
+  -- Build set of owned lines
+  ---@type table<integer, neotion.Block>
+  local line_to_block = {}
+  for _, block in ipairs(blocks) do
+    local block_start, block_end = block:get_line_range()
+    if block_start and block_end then
+      for line = block_start, block_end do
+        line_to_block[line] = block
+      end
+    end
+  end
+
+  -- Find orphan ranges
+  ---@type neotion.OrphanLineRange[]
+  local orphans = {}
+  local current_orphan = nil
+  local last_block_id = nil
+
+  for line = start_line, total_lines do
+    local owner = line_to_block[line]
+    if owner then
+      -- Line is owned by a block
+      if current_orphan then
+        -- End current orphan range
+        table.insert(orphans, current_orphan)
+        current_orphan = nil
+      end
+      last_block_id = owner:get_id()
+    else
+      -- Line is orphan
+      if not current_orphan then
+        -- Start new orphan range
+        local content = vim.api.nvim_buf_get_lines(bufnr, line - 1, line, false)
+        current_orphan = {
+          start_line = line,
+          end_line = line,
+          content = content,
+          after_block_id = last_block_id,
+        }
+      else
+        -- Extend current orphan range
+        current_orphan.end_line = line
+        local line_content = vim.api.nvim_buf_get_lines(bufnr, line - 1, line, false)
+        table.insert(current_orphan.content, line_content[1] or '')
+      end
+    end
+  end
+
+  -- Don't forget last orphan range
+  if current_orphan then
+    table.insert(orphans, current_orphan)
+  end
+
+  log.debug('detect_orphan_lines complete', {
+    orphan_count = #orphans,
+  })
+
+  return orphans
+end
+
 return M

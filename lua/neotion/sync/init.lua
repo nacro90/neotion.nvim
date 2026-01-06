@@ -214,39 +214,39 @@ function M.execute(bufnr, plan, callback)
       local block_json = model.serialize_block(create.block)
 
       blocks_api.append(page_id, { block_json }, function(result)
-      if result.error then
-        log.error('Create failed', {
-          temp_id = create.temp_id,
-          error = result.error,
-        })
-        table.insert(errors, 'Create failed for block ' .. (create.temp_id or 'unknown') .. ': ' .. result.error)
-      else
-        -- Update block with real Notion ID from response
-        local new_block = result.blocks and result.blocks[1]
-        if new_block and new_block.id then
-          log.info('Create succeeded', {
+        if result.error then
+          log.error('Create failed', {
             temp_id = create.temp_id,
-            new_id = new_block.id,
+            error = result.error,
           })
-
-          -- Update block's ID
-          create.block.id = new_block.id
-          create.block.raw.id = new_block.id
-
-          -- Clear new block markers
-          create.block.is_new = false
-          create.block.temp_id = nil
-          create.block.after_block_id = nil
-
-          -- Update original text for dirty tracking
-          create.block.original_text = create.block:get_text()
+          table.insert(errors, 'Create failed for block ' .. (create.temp_id or 'unknown') .. ': ' .. result.error)
         else
-          log.warn('Create succeeded but no block ID in response', {
-            temp_id = create.temp_id,
-          })
+          -- Update block with real Notion ID from response
+          local new_block = result.blocks and result.blocks[1]
+          if new_block and new_block.id then
+            log.info('Create succeeded', {
+              temp_id = create.temp_id,
+              new_id = new_block.id,
+            })
+
+            -- Update block's ID
+            create.block.id = new_block.id
+            create.block.raw.id = new_block.id
+
+            -- Clear new block markers
+            create.block.is_new = false
+            create.block.temp_id = nil
+            create.block.after_block_id = nil
+
+            -- Update original text for dirty tracking
+            create.block.original_text = create.block:get_text()
+          else
+            log.warn('Create succeeded but no block ID in response', {
+              temp_id = create.temp_id,
+            })
+          end
         end
-      end
-      check_done()
+        check_done()
       end, create.after_block_id)
     end
   end

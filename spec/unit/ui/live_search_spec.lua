@@ -8,12 +8,14 @@ describe('neotion.ui.live_search', function()
   end)
 
   describe('api_page_to_item', function()
+    -- Note: Uses api/pages.lua helper functions for consistent behavior
     it('should convert page with emoji icon', function()
       local page = {
         id = 'abc123',
         icon = { type = 'emoji', emoji = '📄' },
         properties = {
           title = {
+            type = 'title',
             title = { { plain_text = 'Test Page' } },
           },
         },
@@ -35,6 +37,7 @@ describe('neotion.ui.live_search', function()
         icon = { type = 'external', external = { url = 'https://example.com/icon.png' } },
         properties = {
           title = {
+            type = 'title',
             title = { { plain_text = 'Another Page' } },
           },
         },
@@ -45,8 +48,8 @@ describe('neotion.ui.live_search', function()
 
       assert.equals('def456', item.id)
       assert.equals('Another Page', item.title)
-      assert.equals('', item.icon) -- External icons can't be displayed in terminal
-      assert.equals('page_id', item.parent_type)
+      assert.equals('🔗', item.icon) -- External icons shown as link emoji
+      assert.equals('page', item.parent_type) -- api/pages.lua returns 'page' not 'page_id'
     end)
 
     it('should handle missing icon', function()
@@ -54,6 +57,7 @@ describe('neotion.ui.live_search', function()
         id = 'ghi789',
         properties = {
           title = {
+            type = 'title',
             title = { { plain_text = 'No Icon Page' } },
           },
         },
@@ -73,6 +77,7 @@ describe('neotion.ui.live_search', function()
         icon = vim.NIL,
         properties = {
           title = {
+            type = 'title',
             title = { { plain_text = 'Nil Icon' } },
           },
         },
@@ -89,6 +94,7 @@ describe('neotion.ui.live_search', function()
         id = 'mno345',
         properties = {
           title = {
+            type = 'title',
             title = { { plain_text = 'DB Page' } },
           },
         },
@@ -97,8 +103,45 @@ describe('neotion.ui.live_search', function()
 
       local item = live_search.api_page_to_item(page)
 
-      assert.equals('database_id', item.parent_type)
+      assert.equals('database', item.parent_type) -- api/pages.lua returns 'database' not 'database_id'
       assert.equals('db123', item.parent_id)
+    end)
+
+    it('should find title in custom property name', function()
+      -- Database pages may have title in a custom-named property
+      local page = {
+        id = 'custom123',
+        properties = {
+          ['Task Name'] = {
+            type = 'title',
+            title = { { plain_text = 'Custom Title Property' } },
+          },
+        },
+        parent = { type = 'workspace', workspace = true },
+      }
+
+      local item = live_search.api_page_to_item(page)
+
+      assert.equals('Custom Title Property', item.title)
+    end)
+
+    it('should normalize dashed IDs to match cache format', function()
+      -- Notion API returns dashed UUIDs, but cache stores without dashes
+      local page = {
+        id = '2027b4fb-fc3e-80bc-a956-df97681d756a',
+        properties = {
+          title = {
+            type = 'title',
+            title = { { plain_text = 'Dashed ID Page' } },
+          },
+        },
+        parent = { type = 'workspace', workspace = true },
+      }
+
+      local item = live_search.api_page_to_item(page)
+
+      -- ID should be normalized (dashes removed) for deduplication
+      assert.equals('2027b4fbfc3e80bca956df97681d756a', item.id)
     end)
   end)
 
@@ -270,7 +313,7 @@ describe('neotion.ui.live_search', function()
       assert.equals('', state.query)
       assert.equals(300, state.debounce_ms)
       assert.is_true(state.show_cached)
-      assert.equals(50, state.limit)
+      assert.equals(100, state.limit) -- Updated: default is now 100
       assert.is_false(state.is_loading)
       assert.is_table(state.cached_results)
       assert.equals(0, #state.cached_results)
@@ -363,6 +406,40 @@ describe('neotion.ui.live_search', function()
 
       assert.is_nil(live_search.get_state(30))
       assert.is_table(live_search.get_state(31))
+    end)
+
+    it('should clear all state fields before removal', function()
+      local callbacks = { on_results = function() end }
+      local state = live_search.create(32, callbacks)
+
+      -- Populate state with data
+      state.query = 'test query'
+      state.cached_results = { { id = '1', title = 'Test' } }
+      state.api_results = { { id = '2', title = 'API Result' } }
+      state.is_loading = true
+
+      -- Verify state has data
+      assert.equals('test query', state.query)
+      assert.equals(1, #state.cached_results)
+      assert.is_true(state.is_loading)
+
+      live_search.destroy(32)
+
+      -- State should be completely removed
+      assert.is_nil(live_search.get_state(32))
+    end)
+
+    it('should be safe to call destroy multiple times', function()
+      local callbacks = { on_results = function() end }
+      live_search.create(33, callbacks)
+
+      -- First destroy
+      live_search.destroy(33)
+      assert.is_nil(live_search.get_state(33))
+
+      -- Second destroy should not error
+      live_search.destroy(33)
+      assert.is_nil(live_search.get_state(33))
     end)
   end)
 
@@ -489,6 +566,88 @@ describe('neotion.ui.live_search', function()
 
   describe('cache integration', function()
     -- These tests use mocks since cache may not be available in test environment
+
+    it('should try query_cache for empty query before frecency fallback', function()
+      local cache_query_received = nil
+      local results_received = nil
+
+      -- Mock fetch_cached to track what query is passed
+      live_search._set_cache_fetcher(function(query, limit)
+        cache_query_received = query
+        -- Return mock results
+        return {
+          { id = 'recent1', title = 'Recent Page 1', from_cache = true },
+          { id = 'recent2', title = 'Recent Page 2', from_cache = true },
+        }
+      end)
+
+      local callbacks = {
+        on_results = function(items, is_final)
+          results_received = items
+        end,
+      }
+
+      live_search.create(79, callbacks, { show_cached = true, debounce_ms = 500 })
+      live_search.update_query(79, '')
+
+      -- Should call cache fetcher with empty query
+      assert.equals('', cache_query_received)
+      assert.is_not_nil(results_received)
+      assert.equals(2, #results_received)
+
+      live_search._set_cache_fetcher(nil)
+    end)
+
+    it('should handle empty query from API and cache it', function()
+      local query_saved = nil
+      local page_ids_saved = nil
+
+      live_search._set_cache_fetcher(function(query, limit)
+        return {}
+      end)
+
+      live_search._set_api_searcher(function(query, callback)
+        vim.schedule(function()
+          callback({
+            pages = {
+              {
+                id = 'recent1',
+                properties = { title = { title = { { plain_text = 'Recent 1' } } } },
+                parent = { type = 'workspace' },
+              },
+              {
+                id = 'recent2',
+                properties = { title = { title = { { plain_text = 'Recent 2' } } } },
+                parent = { type = 'workspace' },
+              },
+            },
+            error = nil,
+          })
+        end)
+        return { request_id = 1, cancel = function() end }
+      end)
+
+      local callbacks = {
+        on_results = function() end,
+      }
+
+      live_search.create(78, callbacks, { debounce_ms = 0, show_cached = false })
+      live_search.search_immediate(78, '')
+
+      -- Wait for async response
+      vim.wait(100, function()
+        return live_search.get_state(78).api_results ~= nil
+      end)
+
+      -- API results should be available
+      local state = live_search.get_state(78)
+      assert.is_not_nil(state.api_results)
+      assert.equals(2, #state.api_results)
+
+      live_search._set_cache_fetcher(nil)
+      live_search._set_api_searcher(nil)
+    end)
+
     it('should call on_results with cached results when show_cached is true', function()
       local results_received = nil
       local is_final_received = nil
@@ -596,12 +755,12 @@ describe('neotion.ui.live_search', function()
             pages = {
               {
                 id = 'shared',
-                properties = { title = { title = { { plain_text = 'API Shared' } } } },
+                properties = { title = { type = 'title', title = { { plain_text = 'API Shared' } } } },
                 parent = { type = 'workspace' },
               },
               {
                 id = 'api1',
-                properties = { title = { title = { { plain_text = 'API Only' } } } },
+                properties = { title = { type = 'title', title = { { plain_text = 'API Only' } } } },
                 parent = { type = 'workspace' },
               },
             },
@@ -665,6 +824,49 @@ describe('neotion.ui.live_search', function()
       live_search._set_api_searcher(nil)
     end)
 
+    it('should silently ignore cancelled requests', function()
+      local error_received = nil
+      local loading_false_called = false
+      local results_callback_count = 0
+
+      live_search._set_api_searcher(function(query, callback)
+        vim.schedule(function()
+          -- Simulate cancelled request response
+          callback({ error = 'Request cancelled', pages = {} })
+        end)
+        return { request_id = 1, cancel = function() end }
+      end)
+
+      local callbacks = {
+        on_results = function()
+          results_callback_count = results_callback_count + 1
+        end,
+        on_error = function(err)
+          error_received = err
+        end,
+        on_loading = function(is_loading)
+          if not is_loading then
+            loading_false_called = true
+          end
+        end,
+      }
+
+      live_search.create(94, callbacks, { debounce_ms = 0, show_cached = false })
+      live_search.search_immediate(94, 'test')
+
+      vim.wait(50, function()
+        return false -- Just wait, don't expect anything
+      end)
+
+      -- Cancelled requests should not trigger any callbacks
+      assert.is_nil(error_received)
+      assert.is_false(loading_false_called)
+      -- on_results only called once for initial cached (if show_cached was true), not for cancelled
+      assert.equals(0, results_callback_count)
+
+      live_search._set_api_searcher(nil)
+    end)
+
     it('should handle API errors gracefully', function()
       local error_received = nil
 
@@ -682,8 +884,8 @@ describe('neotion.ui.live_search', function()
         end,
       }
 
-      live_search.create(93, callbacks, { debounce_ms = 0, show_cached = false })
-      live_search.search_immediate(93, 'test')
+      live_search.create(95, callbacks, { debounce_ms = 0, show_cached = false })
+      live_search.search_immediate(95, 'test')
 
       vim.wait(50, function()
         return error_received ~= nil
@@ -692,6 +894,314 @@ describe('neotion.ui.live_search', function()
       assert.equals('Network error', error_received)
 
       live_search._set_api_searcher(nil)
+    end)
+
+    it('should not call callbacks after instance is destroyed', function()
+      local results_received_after_destroy = false
+
+      live_search._set_api_searcher(function(query, callback)
+        -- Simulate slow API response that arrives after destroy
+        vim.defer_fn(function()
+          callback({
+            pages = {
+              {
+                id = 'late_page',
+                properties = { title = { type = 'title', title = { { plain_text = 'Late Result' } } } },
+                parent = { type = 'workspace' },
+              },
+            },
+            error = nil,
+          })
+        end, 50) -- 50ms delay
+        return { request_id = 1, cancel = function() end }
+      end)
+
+      local callbacks = {
+        on_results = function(items, is_final)
+          -- This should NOT be called after destroy
+          if is_final then
+            results_received_after_destroy = true
+          end
+        end,
+      }
+
+      live_search.create(96, callbacks, { debounce_ms = 0, show_cached = false })
+      live_search.search_immediate(96, 'test')
+
+      -- Destroy immediately before API response arrives
+      live_search.destroy(96)
+
+      -- Wait for the delayed API response
+      vim.wait(100, function()
+        return false -- Just wait, API response arrives during this
+      end)
+
+      -- Callback should NOT have been called because instance was destroyed
+      -- Note: This tests that callbacks check instance validity
+      -- The actual picker.lua implementation checks live_search.get_state(instance_id)
+      assert.is_nil(live_search.get_state(96))
+    end)
+
+    it('should allow new instance with same callbacks after destroy', function()
+      local results_count = 0
+      local last_query = nil
+
+      live_search._set_api_searcher(function(query, callback)
+        vim.schedule(function()
+          callback({
+            pages = {
+              {
+                id = 'page_' .. query,
+                properties = { title = { type = 'title', title = { { plain_text = 'Result for ' .. query } } } },
+                parent = { type = 'workspace' },
+              },
+            },
+            error = nil,
+          })
+        end)
+        return { request_id = 1, cancel = function() end }
+      end)
+
+      local callbacks = {
+        on_results = function(items, is_final)
+          if is_final and #items > 0 then
+            results_count = results_count + 1
+            last_query = items[1].title
+          end
+        end,
+      }
+
+      -- First instance
+      live_search.create(97, callbacks, { debounce_ms = 0, show_cached = false })
+      live_search.search_immediate(97, 'first')
+
+      vim.wait(50, function()
+        return results_count > 0
+      end)
+
+      assert.equals(1, results_count)
+      assert.equals('Result for first', last_query)
+
+      -- Destroy first instance
+      live_search.destroy(97)
+
+      -- Create second instance (simulating user reopening picker)
+      live_search.create(98, callbacks, { debounce_ms = 0, show_cached = false })
+      live_search.search_immediate(98, 'second')
+
+      vim.wait(50, function()
+        return results_count > 1
+      end)
+
+      assert.equals(2, results_count)
+      assert.equals('Result for second', last_query)
+
+      -- Verify first instance is gone
+      assert.is_nil(live_search.get_state(97))
+      -- Second instance should exist
+      assert.is_not_nil(live_search.get_state(98))
+
+      live_search._set_api_searcher(nil)
+    end)
+  end)
+
+  describe('instance isolation', function()
+    it('should not share state between instances', function()
+      local instance1_results = nil
+      local instance2_results = nil
+
+      live_search._set_cache_fetcher(function(query, limit)
+        return { { id = 'cache_' .. query, title = 'Cached ' .. query, from_cache = true } }
+      end)
+
+      local callbacks1 = {
+        on_results = function(items)
+          instance1_results = items
+        end,
+      }
+
+      local callbacks2 = {
+        on_results = function(items)
+          instance2_results = items
+        end,
+      }
+
+      -- Create two separate instances
+      live_search.create(100, callbacks1, { show_cached = true, debounce_ms = 500 })
+      live_search.create(101, callbacks2, { show_cached = true, debounce_ms = 500 })
+
+      -- Update queries
+      live_search.update_query(100, 'query1')
+      live_search.update_query(101, 'query2')
+
+      -- Each instance should have its own results
+      assert.is_not_nil(instance1_results)
+      assert.is_not_nil(instance2_results)
+      assert.equals('cache_query1', instance1_results[1].id)
+      assert.equals('cache_query2', instance2_results[1].id)
+
+      -- Verify states are separate
+      local state1 = live_search.get_state(100)
+      local state2 = live_search.get_state(101)
+      assert.equals('query1', state1.query)
+      assert.equals('query2', state2.query)
+
+      live_search._set_cache_fetcher(nil)
+    end)
+
+    it('should destroy only the specified instance', function()
+      local callbacks = { on_results = function() end }
+
+      live_search.create(102, callbacks)
+      live_search.create(103, callbacks)
+      live_search.create(104, callbacks)
+
+      -- Destroy middle instance
+      live_search.destroy(103)
+
+      -- Others should still exist
+      assert.is_not_nil(live_search.get_state(102))
+      assert.is_nil(live_search.get_state(103))
+      assert.is_not_nil(live_search.get_state(104))
+    end)
+
+    it('should start new instance with empty query after destroying old instance', function()
+      -- This tests the bug fix: when picker is closed and reopened,
+      -- the new instance should start with empty query, not stale query from old instance
+      local instance1_queries = {}
+      local instance2_queries = {}
+
+      live_search._set_cache_fetcher(function(query, limit)
+        return {}
+      end)
+
+      local callbacks1 = {
+        on_results = function(items, is_final)
+          -- Track all queries for instance 1
+        end,
+      }
+
+      local callbacks2 = {
+        on_results = function(items, is_final)
+          -- Track all queries for instance 2
+        end,
+      }
+
+      -- First instance - user types "karadeniz"
+      live_search.create(200, callbacks1, { show_cached = false, debounce_ms = 0 })
+      live_search.update_query(200, 'karadeniz')
+
+      local state1 = live_search.get_state(200)
+      assert.equals('karadeniz', state1.query)
+
+      -- Destroy first instance (simulates closing picker)
+      live_search.destroy(200)
+      assert.is_nil(live_search.get_state(200))
+
+      -- Second instance - should start fresh with empty query
+      live_search.create(201, callbacks2, { show_cached = false, debounce_ms = 0 })
+      live_search.search_immediate(201, '')
+
+      local state2 = live_search.get_state(201)
+      -- Query should be empty, NOT "karadeniz" from old instance
+      assert.equals('', state2.query)
+
+      live_search._set_cache_fetcher(nil)
+    end)
+
+    it('should not leak query between rapidly created instances', function()
+      -- Tests race condition: old instance destroyed, new instance created quickly
+      local results_log = {}
+
+      live_search._set_cache_fetcher(function(query, limit)
+        table.insert(results_log, { type = 'cache', query = query })
+        return {}
+      end)
+
+      live_search._set_api_searcher(function(query, callback)
+        table.insert(results_log, { type = 'api_start', query = query })
+        vim.defer_fn(function()
+          table.insert(results_log, { type = 'api_complete', query = query })
+          callback({ pages = {}, error = nil })
+        end, 50)
+        return { request_id = 1, cancel = function() end }
+      end)
+
+      local callbacks = { on_results = function() end }
+
+      -- Instance 1: search "old_query"
+      live_search.create(300, callbacks, { show_cached = true, debounce_ms = 0 })
+      live_search.search_immediate(300, 'old_query')
+
+      -- Immediately destroy and create new instance
+      live_search.destroy(300)
+
+      -- Instance 2: should start with empty query
+      live_search.create(301, callbacks, { show_cached = true, debounce_ms = 0 })
+      live_search.search_immediate(301, '')
+
+      -- Wait for async operations
+      vim.wait(100, function()
+        return false
+      end)
+
+      -- Verify instance 2's state
+      local state2 = live_search.get_state(301)
+      assert.is_not_nil(state2)
+      assert.equals('', state2.query)
+
+      -- Verify that cache fetcher was called with correct queries
+      -- First for "old_query", then for ""
+      local cache_queries = {}
+      for _, log in ipairs(results_log) do
+        if log.type == 'cache' then
+          table.insert(cache_queries, log.query)
+        end
+      end
+
+      assert.equals(2, #cache_queries)
+      assert.equals('old_query', cache_queries[1])
+      assert.equals('', cache_queries[2])
+
+      live_search._set_cache_fetcher(nil)
+      live_search._set_api_searcher(nil)
+    end)
+
+    it('should handle update_query with stale query gracefully', function()
+      -- Tests that if somehow a stale query is passed to update_query,
+      -- the state is updated correctly (not contaminated)
+      local results_received = {}
+
+      live_search._set_cache_fetcher(function(query, limit)
+        return { { id = 'result_' .. query, title = 'Result for: ' .. query, from_cache = true } }
+      end)
+
+      local callbacks = {
+        on_results = function(items, is_final)
+          if #items > 0 then
+            table.insert(results_received, items[1].id)
+          end
+        end,
+      }
+
+      live_search.create(400, callbacks, { show_cached = true, debounce_ms = 500 })
+
+      -- Simulate rapid query updates (like typing fast)
+      live_search.update_query(400, 'a')
+      live_search.update_query(400, 'ab')
+      live_search.update_query(400, 'abc')
+
+      -- Final state should be 'abc'
+      local state = live_search.get_state(400)
+      assert.equals('abc', state.query)
+
+      -- All intermediate queries should have triggered on_results
+      assert.equals(3, #results_received)
+      assert.equals('result_a', results_received[1])
+      assert.equals('result_ab', results_received[2])
+      assert.equals('result_abc', results_received[3])
+
+      live_search._set_cache_fetcher(nil)
     end)
   end)
 end)

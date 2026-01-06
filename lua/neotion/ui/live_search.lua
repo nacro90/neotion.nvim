@@ -62,82 +62,21 @@ function M._set_api_searcher(fn)
   mock_api_searcher = fn
 end
 
---- Format icon from API page icon data
----@param icon_data table|nil Icon data from Notion API
----@return string
-local function format_icon(icon_data)
-  -- Handle nil, vim.NIL (userdata), or non-table values
-  if not icon_data or icon_data == vim.NIL or type(icon_data) ~= 'table' then
-    return ''
-  end
-  if icon_data.type == 'emoji' then
-    return icon_data.emoji or ''
-  end
-  if icon_data.type == 'external' then
-    return '' -- Can't display external URL icons in terminal
-  end
-  return ''
-end
-
---- Get title from API page
----@param page table Notion API page object
----@return string
-local function get_title(page)
-  local props = page.properties
-  if not props then
-    return ''
-  end
-
-  -- Try title property first (most common)
-  if props.title and props.title.title then
-    local title_arr = props.title.title
-    if #title_arr > 0 and title_arr[1].plain_text then
-      return title_arr[1].plain_text
-    end
-  end
-
-  -- Try Name property (databases often use this)
-  if props.Name and props.Name.title then
-    local name_arr = props.Name.title
-    if #name_arr > 0 and name_arr[1].plain_text then
-      return name_arr[1].plain_text
-    end
-  end
-
-  return ''
-end
-
---- Get parent info from API page
----@param page table Notion API page object
----@return string parent_type
----@return string|nil parent_id
-local function get_parent(page)
-  local parent = page.parent
-  if not parent then
-    return 'workspace', nil
-  end
-
-  if parent.type == 'workspace' then
-    return 'workspace', nil
-  elseif parent.type == 'page_id' then
-    return 'page_id', parent.page_id
-  elseif parent.type == 'database_id' then
-    return 'database_id', parent.database_id
-  end
-
-  return 'workspace', nil
-end
-
 --- Convert API page to PageItem
+--- Uses api/pages.lua helper functions for consistent title/icon extraction
 ---@param page table Notion API page object
 ---@return neotion.PageItem
 function M.api_page_to_item(page)
-  local parent_type, parent_id = get_parent(page)
+  local pages_api = require('neotion.api.pages')
+  local parent_type, parent_id = pages_api.get_parent(page)
+
+  -- Normalize ID (remove dashes) to match cache format for deduplication
+  local normalized_id = page.id and page.id:gsub('-', '') or ''
 
   return {
-    id = page.id,
-    title = get_title(page),
-    icon = format_icon(page.icon),
+    id = normalized_id,
+    title = pages_api.get_title(page),
+    icon = pages_api.get_icon(page) or '',
     parent_type = parent_type,
     parent_id = parent_id,
     from_cache = false,
@@ -243,6 +182,8 @@ end
 function M.destroy(instance_id)
   local state = states[instance_id]
   if state then
+    log.debug('Destroying live search instance', { instance_id = instance_id })
+
     -- Cancel any pending debounce timer
     if state.debounce_timer then
       vim.fn.timer_stop(state.debounce_timer)
@@ -254,6 +195,13 @@ function M.destroy(instance_id)
       state.cancel_fn()
       state.cancel_fn = nil
     end
+
+    -- Clear all state to prevent any lingering references
+    state.query = ''
+    state.cached_results = {}
+    state.api_results = nil
+    state.is_loading = false
+    state.request_id = nil
   end
 
   states[instance_id] = nil
@@ -303,7 +251,9 @@ local function page_ids_to_items(page_ids, limit)
     if i > limit then
       break
     end
-    local page_data = cache_pages.get_page(page_id)
+    -- Normalize ID (remove dashes) for lookup - handles both old and new cache entries
+    local normalized_id = page_id:gsub('-', '')
+    local page_data = cache_pages.get_page(normalized_id)
     if page_data then
       table.insert(items, M.cached_row_to_item(page_data))
     end
@@ -327,17 +277,50 @@ local function fetch_cached(query, limit)
     return results
   end
 
+  -- Ensure cache is initialized
+  local cache_ok, cache = pcall(require, 'neotion.cache')
+  if cache_ok and cache.is_available() and not cache.is_initialized() then
+    local init_ok = cache.init()
+    log.debug('Cache init during fetch_cached', { success = init_ok })
+  end
+
   local ok, cache_pages = pcall(require, 'neotion.cache.pages')
   if not ok then
     log.debug('Cache module not available')
     return {}
   end
 
-  -- Empty query: show recent pages (frecency sorted)
   local normalized_query = (query or ''):match('^%s*(.-)%s*$') or ''
+
+  -- Try query cache first for ALL queries (including empty)
+  -- This preserves Notion's relevance order
+  local qc_ok, query_cache = pcall(require, 'neotion.cache.query_cache')
+  if qc_ok then
+    local cached_query
+    if normalized_query == '' then
+      -- For empty query, just do exact match
+      cached_query = query_cache.get('')
+    else
+      -- For non-empty, try prefix fallback
+      cached_query = query_cache.get_with_prefix_fallback(query)
+    end
+
+    if cached_query then
+      local items = page_ids_to_items(cached_query.page_ids, limit)
+      log.debug('Query cache hit', {
+        query = normalized_query,
+        matched = cached_query.matched_query,
+        is_fallback = cached_query.is_fallback or false,
+        count = #items,
+      })
+      return items
+    end
+  end
+
+  -- Fallback: Empty query -> recent pages (frecency sorted)
   if normalized_query == '' then
     local rows = cache_pages.get_recent(limit)
-    log.debug('Empty query - showing recent pages', { count = #rows })
+    log.debug('Empty query fallback - showing recent pages (frecency)', { count = #rows })
     local items = {}
     for _, row in ipairs(rows) do
       table.insert(items, M.cached_row_to_item(row))
@@ -345,25 +328,9 @@ local function fetch_cached(query, limit)
     return items
   end
 
-  -- Try query cache first (preserves Notion's relevance order)
-  local qc_ok, query_cache = pcall(require, 'neotion.cache.query_cache')
-  if qc_ok then
-    local cached_query = query_cache.get_with_prefix_fallback(query)
-    if cached_query then
-      local items = page_ids_to_items(cached_query.page_ids, limit)
-      log.debug('Query cache hit', {
-        query = query,
-        matched = cached_query.matched_query,
-        is_fallback = cached_query.is_fallback,
-        count = #items,
-      })
-      return items
-    end
-  end
-
-  -- Fallback to frecency-based search (for queries not yet in cache)
+  -- Fallback: non-empty query -> frecency-based search
   local rows = cache_pages.search(query, limit)
-  log.debug('Frecency cache search', { query = query, count = #rows, limit = limit })
+  log.debug('Frecency cache search fallback', { query = query, count = #rows, limit = limit })
 
   local items = {}
   for _, row in ipairs(rows) do
@@ -385,6 +352,11 @@ local function start_api_search(state, query)
   end
 
   local function handle_response(result)
+    -- Silently ignore cancelled requests - a new request has already started
+    if result.error == 'Request cancelled' then
+      return
+    end
+
     state.is_loading = false
     if state.callbacks.on_loading then
       state.callbacks.on_loading(false)
@@ -409,19 +381,30 @@ local function start_api_search(state, query)
 
     -- Save API results to cache for future searches
     if result.pages and #result.pages > 0 then
+      -- Ensure cache is initialized before saving
+      local cache_ok, cache = pcall(require, 'neotion.cache')
+      if cache_ok and cache.is_available() and not cache.is_initialized() then
+        local init_ok = cache.init()
+        log.debug('Cache init before saving API results', { success = init_ok })
+      end
+
       -- Save page metadata to pages cache
-      local cache_ok, cache_pages = pcall(require, 'neotion.cache.pages')
-      if cache_ok then
+      local pages_cache_ok, cache_pages = pcall(require, 'neotion.cache.pages')
+      if pages_cache_ok then
         local saved = cache_pages.save_pages_batch(result.pages)
         log.debug('Saved API results to pages cache', { count = saved })
       end
 
       -- Save query->page_ids mapping to query cache (preserves Notion order)
+      -- IMPORTANT: Normalize IDs (remove dashes) to match pages table format
       local qc_ok, query_cache_mod = pcall(require, 'neotion.cache.query_cache')
       if qc_ok then
         local page_ids = {}
         for _, page in ipairs(result.pages) do
-          table.insert(page_ids, page.id)
+          local normalized_id = page.id and page.id:gsub('-', '')
+          if normalized_id then
+            table.insert(page_ids, normalized_id)
+          end
         end
         query_cache_mod.set(query, page_ids)
         log.debug('Saved query to query cache', { query = query, count = #page_ids })

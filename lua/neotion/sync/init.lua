@@ -195,10 +195,9 @@ function M.execute(bufnr, plan, callback)
     end)
   end
 
-  -- Execute creates sequentially (Bug #10.3 fix: chained temp_id resolution)
-  -- Creates must be executed in order because later blocks may reference
-  -- earlier blocks via temp_id for after_block_id positioning
-  local temp_id_to_real_id = {} -- Map temp_id -> real Notion UUID
+  -- Execute creates with batching optimization
+  -- Consecutive creates that form a chain (block[i+1].after_block_id == block[i].temp_id)
+  -- can be batched into a single API call since Notion's append preserves array order
 
   --- Check if a string is a temp_id (starts with "temp_")
   ---@param id string|nil
@@ -206,6 +205,49 @@ function M.execute(bufnr, plan, callback)
   local function is_temp_id(id)
     return id ~= nil and id:sub(1, 5) == 'temp_'
   end
+
+  --- Group consecutive creates into batches
+  --- A batch is a chain where each block's after_block_id points to the previous block's temp_id
+  ---@return {creates: neotion.SyncPlanCreate[], after_block_id: string|nil}[]
+  local function group_creates_into_batches()
+    if #plan.creates == 0 then
+      return {}
+    end
+
+    local batches = {}
+    local current_batch = { creates = { plan.creates[1] }, after_block_id = plan.creates[1].after_block_id }
+
+    for i = 2, #plan.creates do
+      local create = plan.creates[i]
+      local prev_create = plan.creates[i - 1]
+
+      -- Check if this create chains from the previous one
+      if create.after_block_id == prev_create.temp_id then
+        -- Add to current batch (it's part of the chain)
+        table.insert(current_batch.creates, create)
+      else
+        -- Start a new batch
+        table.insert(batches, current_batch)
+        current_batch = { creates = { create }, after_block_id = create.after_block_id }
+      end
+    end
+
+    -- Don't forget the last batch
+    table.insert(batches, current_batch)
+
+    log.debug('Grouped creates into batches', {
+      total_creates = #plan.creates,
+      batch_count = #batches,
+      batch_sizes = vim.tbl_map(function(b)
+        return #b.creates
+      end, batches),
+    })
+
+    return batches
+  end
+
+  local create_batches = group_creates_into_batches()
+  local temp_id_to_real_id = {} -- Map temp_id -> real Notion UUID
 
   --- Resolve after_block_id: if it's a temp_id, look up the real ID
   ---@param after_id string|nil
@@ -220,112 +262,133 @@ function M.execute(bufnr, plan, callback)
         log.debug('Resolved temp_id to real ID', { temp_id = after_id, real_id = real_id })
         return real_id
       else
-        log.error('Failed to resolve temp_id', { temp_id = after_id })
-        return nil -- Will cause positioning to fail gracefully
+        log.warn('Failed to resolve temp_id, inserting at end', { temp_id = after_id })
+        return nil -- Will insert at end of page
       end
     end
     return after_id
   end
 
-  --- Execute creates one by one to maintain dependency order
-  ---@param index integer Current index in plan.creates
-  local function execute_create(index)
-    if index > #plan.creates then
-      return -- All creates done
+  --- Execute a batch of creates in a single API call
+  ---@param batch_index integer Current batch index
+  local function execute_batch(batch_index)
+    if batch_index > #create_batches then
+      return -- All batches done
     end
 
-    local create = plan.creates[index]
+    local batch = create_batches[batch_index]
+    local creates = batch.creates
 
-    -- Validate page_id before attempting create
+    -- Validate page_id
     if not page_id then
-      log.error('Cannot create block: page_id not found', { temp_id = create.temp_id })
-      table.insert(errors, 'Cannot create block: page_id not found')
-      check_done()
-      execute_create(index + 1)
+      log.error('Cannot create blocks: page_id not found')
+      for _ = 1, #creates do
+        table.insert(errors, 'Cannot create block: page_id not found')
+        check_done()
+      end
+      execute_batch(batch_index + 1)
       return
     end
 
-    -- Resolve after_block_id (convert temp_id to real UUID if needed)
-    local resolved_after_id = resolve_after_id(create.after_block_id)
+    -- Resolve the batch's after_block_id
+    local resolved_after_id = resolve_after_id(batch.after_block_id)
 
-    log.info('Executing create', {
-      temp_id = create.temp_id,
-      block_type = create.block_type,
-      after_block_id = create.after_block_id,
+    -- Serialize all blocks in the batch
+    local block_jsons = {}
+    for _, create in ipairs(creates) do
+      table.insert(block_jsons, model.serialize_block(create.block))
+    end
+
+    log.info('Executing batch create', {
+      batch_index = batch_index,
+      block_count = #creates,
+      after_block_id = batch.after_block_id,
       resolved_after_id = resolved_after_id,
-      content_preview = create.content:sub(1, 50),
+      block_types = vim.tbl_map(function(c)
+        return c.block_type
+      end, creates),
     })
 
-    -- Serialize block for API
-    local block_json = model.serialize_block(create.block)
-
-    blocks_api.append(page_id, { block_json }, function(result)
+    blocks_api.append(page_id, block_jsons, function(result)
       if result.error then
-        log.error('Create failed', {
-          temp_id = create.temp_id,
+        log.error('Batch create failed', {
+          batch_index = batch_index,
           error = result.error,
         })
-        table.insert(errors, 'Create failed for block ' .. (create.temp_id or 'unknown') .. ': ' .. result.error)
+        for _, create in ipairs(creates) do
+          table.insert(errors, 'Create failed for block ' .. (create.temp_id or 'unknown') .. ': ' .. result.error)
+          check_done()
+        end
       else
-        -- Update block with real Notion ID from response
-        local new_block = result.blocks and result.blocks[1]
-        if new_block and new_block.id then
-          log.info('Create succeeded', {
-            temp_id = create.temp_id,
-            new_id = new_block.id,
-          })
+        -- Update each block with its real Notion ID from response
+        local returned_blocks = result.blocks or {}
 
-          -- Store temp_id -> real_id mapping for subsequent blocks
-          if create.temp_id then
-            temp_id_to_real_id[create.temp_id] = new_block.id
-            log.debug('Stored temp_id mapping', {
-              temp_id = create.temp_id,
-              real_id = new_block.id,
-            })
-          end
-
-          -- Update block's ID
-          create.block.id = new_block.id
-          create.block.raw.id = new_block.id
-
-          -- Clear new block markers
-          create.block.is_new = false
-          create.block.temp_id = nil
-          create.block.after_block_id = nil
-
-          -- Update original text for dirty tracking
-          create.block.original_text = create.block:get_text()
-
-          -- Bug #10.4 fix: Add block to model with extmark
-          -- This prevents the same lines from being detected as orphans again
-          local mapping = require('neotion.model.mapping')
-          local start_line = create.block.orphan_start_line
-          local end_line = create.block.orphan_end_line
-
-          if start_line and end_line then
-            -- Use the resolved after_id (real UUID, not temp_id)
-            mapping.add_block(bufnr, create.block, start_line, end_line, resolved_after_id)
-          else
-            log.warn('Block missing orphan line info, cannot add to model', {
+        for i, create in ipairs(creates) do
+          local new_block = returned_blocks[i]
+          if new_block and new_block.id then
+            log.debug('Block created in batch', {
+              batch_index = batch_index,
+              block_index = i,
               temp_id = create.temp_id,
               new_id = new_block.id,
             })
+
+            -- Store temp_id -> real_id mapping
+            if create.temp_id then
+              temp_id_to_real_id[create.temp_id] = new_block.id
+            end
+
+            -- Update block's ID
+            create.block.id = new_block.id
+            create.block.raw.id = new_block.id
+
+            -- Clear new block markers
+            create.block.is_new = false
+            create.block.temp_id = nil
+            create.block.after_block_id = nil
+
+            -- Update original text for dirty tracking
+            create.block.original_text = create.block:get_text()
+
+            -- Add block to model with extmark
+            local mapping = require('neotion.model.mapping')
+            local start_line = create.block.orphan_start_line
+            local end_line = create.block.orphan_end_line
+
+            if start_line and end_line then
+              -- For batch creates, use resolved_after_id for first block,
+              -- then each subsequent block's after is the previous block's new ID
+              local block_after_id = i == 1 and resolved_after_id or returned_blocks[i - 1].id
+              mapping.add_block(bufnr, create.block, start_line, end_line, block_after_id)
+            else
+              log.warn('Block missing orphan line info', {
+                temp_id = create.temp_id,
+                new_id = new_block.id,
+              })
+            end
+          else
+            log.warn('No block ID in response for batch item', {
+              batch_index = batch_index,
+              block_index = i,
+            })
           end
-        else
-          log.warn('Create succeeded but no block ID in response', {
-            temp_id = create.temp_id,
-          })
+          check_done()
         end
+
+        log.info('Batch create succeeded', {
+          batch_index = batch_index,
+          blocks_created = #returned_blocks,
+        })
       end
-      check_done()
-      -- Execute next create after this one completes
-      execute_create(index + 1)
+
+      -- Execute next batch
+      execute_batch(batch_index + 1)
     end, resolved_after_id)
   end
 
-  -- Start sequential create execution
-  if #plan.creates > 0 then
-    execute_create(1)
+  -- Start batch execution
+  if #create_batches > 0 then
+    execute_batch(1)
   end
 
   -- Execute deletes

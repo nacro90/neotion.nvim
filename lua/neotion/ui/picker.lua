@@ -453,18 +453,21 @@ local function search_native(query, on_choice)
   end)
 end
 
----Select a page from a list of items (for recent pages, etc.)
----@param items neotion.ui.PickerItem[]
----@param opts? neotion.ui.PickerOpts
----@param on_choice fun(item: neotion.ui.PickerItem|nil)
+---Select from a list of items (generic - works for pages, blocks, colors, etc.)
+---@param items table[] Items to select from
+---@param opts? table Options (prompt, format_item)
+---@param on_choice fun(item: table|nil)
 function M.select(items, opts, on_choice)
   opts = opts or {}
 
   if #items == 0 then
-    vim.notify('[neotion] No pages found', vim.log.levels.WARN)
+    vim.notify('[neotion] No items found', vim.log.levels.WARN)
     on_choice(nil)
     return
   end
+
+  -- Custom format_item function or default to page format
+  local format_item = opts.format_item or format_display
 
   if has_telescope() then
     local pickers = require('telescope.pickers')
@@ -473,12 +476,22 @@ function M.select(items, opts, on_choice)
     local actions = require('telescope.actions')
     local action_state = require('telescope.actions.state')
 
+    -- Custom entry maker that uses the format_item function
+    local custom_entry_maker = function(item)
+      local display = format_item(item)
+      return {
+        value = item,
+        display = display,
+        ordinal = display, -- Use display for filtering
+      }
+    end
+
     pickers
       .new(opts, {
         prompt_title = opts.prompt or 'Notion Pages',
         finder = finders.new_table({
           results = items,
-          entry_maker = make_entry,
+          entry_maker = custom_entry_maker,
         }),
         sorter = conf.generic_sorter(opts),
         attach_mappings = function(prompt_bufnr, _)
@@ -497,8 +510,8 @@ function M.select(items, opts, on_choice)
       :find()
   else
     vim.ui.select(items, {
-      prompt = opts.prompt or 'Select page:',
-      format_item = format_display,
+      prompt = opts.prompt or 'Select:',
+      format_item = format_item,
     }, function(item)
       on_choice(item)
     end)

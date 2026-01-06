@@ -47,9 +47,21 @@ lua/neotion/
 | 1-6: Foundation, Formatting, Navigation, Rate Limiting | Done |
 | 7: SQLite Cache (pages, content, frecency) | Done |
 | 8.1-8.3: Live Search + Query Cache | Done |
-| 8.4: `[[` Link Completion | TODO |
-| 9: `/` Slash Commands | TODO |
-| 10: Full Lossless + Polish | TODO |
+| 9.0-9.3: `/` Slash Commands (blocks, colors) | Done |
+| 9.4: `[[` Link Completion | TODO |
+| 9.5: `@` Mention | TODO |
+| 10: Editing Experience Refactor | In Progress |
+
+### Phase 10: Editing Experience
+
+Complete editing experience overhaul:
+
+- **Block Absorption Fix**: `right_gravity = true` extmark ayari
+- **Orphan Line Handling**: Block'lara ait olmayan satirlar
+- **New Block Creation**: `o` sonrasi yeni block olusturma
+- **Type Detection**: `# ` → heading, `- ` → bullet, `---` → divider
+
+Detaylar: `TODO.md`
 
 ## Syntax
 
@@ -78,8 +90,4 @@ Query Cache (Notion order) → Pages Cache → Content Cache
 
 ## Known Issues
 
-- Block links (`notion://block/id`) desteklenmiyor
-- Nested list items → Future
-- Auto-continuation (Enter after list) → Future
-
-Aktif sorunlar: `.claude/plans/`
+Bkz: `TODO.md`

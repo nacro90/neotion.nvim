@@ -11,6 +11,12 @@ local M = {}
 
 ---@type neotion.PrefixPattern[]
 local PREFIX_PATTERNS = {
+  -- Divider (exact match, no content)
+  { pattern = '^(%-%-%-+)$', prefix = '---', type = 'divider' },
+  -- Heading patterns (must come before bullets to not confuse with list)
+  { pattern = '^(### )', prefix = '### ', type = 'heading_3' },
+  { pattern = '^(## )', prefix = '## ', type = 'heading_2' },
+  { pattern = '^(# )', prefix = '# ', type = 'heading_1' },
   -- Bullet list patterns (must start at line beginning, no indent)
   { pattern = '^(%- )', prefix = '- ', type = 'bulleted_list_item' },
   { pattern = '^(%* )', prefix = '* ', type = 'bulleted_list_item' },
@@ -21,6 +27,10 @@ local PREFIX_PATTERNS = {
 
 ---@type table<string, string>
 local TYPE_TO_PREFIX = {
+  divider = '---',
+  heading_1 = '# ',
+  heading_2 = '## ',
+  heading_3 = '### ',
   bulleted_list_item = '- ',
   quote = '| ',
 }

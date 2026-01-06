@@ -53,15 +53,24 @@ function M.save_page(page_id, page)
 
   local now = os.time()
 
-  -- Use INSERT OR REPLACE for upsert
+  -- Use INSERT ... ON CONFLICT ... DO UPDATE for upsert
+  -- CRITICAL: Do NOT use INSERT OR REPLACE - it triggers DELETE which cascades to page_content!
   -- IMPORTANT: Do NOT increment open_count on save - only update_open_stats should do that
   -- IMPORTANT: Preserve last_opened_at - only update_open_stats should set it
   local sql = [[
-    INSERT OR REPLACE INTO pages
+    INSERT INTO pages
     (id, title, icon, icon_type, parent_type, parent_id, last_edited_time, created_time, cached_at, last_opened_at, open_count, is_deleted)
-    VALUES (:id, :title, :icon, :icon_type, :parent_type, :parent_id, :last_edited_time, :created_time, :cached_at,
-            (SELECT last_opened_at FROM pages WHERE id = :id),
-            COALESCE((SELECT open_count FROM pages WHERE id = :id), 0), 0)
+    VALUES (:id, :title, :icon, :icon_type, :parent_type, :parent_id, :last_edited_time, :created_time, :cached_at, NULL, 0, 0)
+    ON CONFLICT(id) DO UPDATE SET
+      title = excluded.title,
+      icon = excluded.icon,
+      icon_type = excluded.icon_type,
+      parent_type = excluded.parent_type,
+      parent_id = excluded.parent_id,
+      last_edited_time = excluded.last_edited_time,
+      created_time = excluded.created_time,
+      cached_at = excluded.cached_at,
+      is_deleted = 0
   ]]
 
   local success = db:execute(sql, {
@@ -108,10 +117,16 @@ function M.save_content(page_id, blocks)
   local content_hash = hash.page_content(blocks)
   local now = os.time()
 
+  -- Use INSERT ... ON CONFLICT for consistency (and future-proofing)
   local sql = [[
-    INSERT OR REPLACE INTO page_content
+    INSERT INTO page_content
     (page_id, blocks_json, content_hash, block_count, fetched_at)
     VALUES (:page_id, :blocks_json, :content_hash, :block_count, :fetched_at)
+    ON CONFLICT(page_id) DO UPDATE SET
+      blocks_json = excluded.blocks_json,
+      content_hash = excluded.content_hash,
+      block_count = excluded.block_count,
+      fetched_at = excluded.fetched_at
   ]]
 
   local success = db:execute(sql, {
@@ -394,12 +409,21 @@ function M.save_pages_batch(pages)
 
         local now = os.time()
 
+        -- Use INSERT ... ON CONFLICT to avoid triggering CASCADE delete on page_content
         local sql = [[
-          INSERT OR REPLACE INTO pages
+          INSERT INTO pages
           (id, title, icon, icon_type, parent_type, parent_id, last_edited_time, created_time, cached_at, last_opened_at, open_count, is_deleted)
-          VALUES (:id, :title, :icon, :icon_type, :parent_type, :parent_id, :last_edited_time, :created_time, :cached_at,
-                  (SELECT last_opened_at FROM pages WHERE id = :id),
-                  COALESCE((SELECT open_count FROM pages WHERE id = :id), 0), 0)
+          VALUES (:id, :title, :icon, :icon_type, :parent_type, :parent_id, :last_edited_time, :created_time, :cached_at, NULL, 0, 0)
+          ON CONFLICT(id) DO UPDATE SET
+            title = excluded.title,
+            icon = excluded.icon,
+            icon_type = excluded.icon_type,
+            parent_type = excluded.parent_type,
+            parent_id = excluded.parent_id,
+            last_edited_time = excluded.last_edited_time,
+            created_time = excluded.created_time,
+            cached_at = excluded.cached_at,
+            is_deleted = 0
         ]]
 
         if

@@ -47,5 +47,18 @@ local function setup_default_keymaps()
   keymaps_module.setup_buffer(bufnr, config.input.shortcuts)
 end
 
+-- Setup input system (shortcuts + triggers)
+local function setup_input_system()
+  local input = require('neotion.input')
+  local bufnr = vim.api.nvim_get_current_buf()
+
+  -- Pass config for shortcuts and triggers
+  input.setup(bufnr, {
+    shortcuts = config.input.shortcuts,
+    triggers = config.input.triggers or {},
+  })
+end
+
 setup_keymaps()
 setup_default_keymaps()
+setup_input_system()

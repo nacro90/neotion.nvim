@@ -26,7 +26,7 @@ M.shortcuts = setmetatable({}, {
 ---@field color? boolean Enable color shortcut (default: true)
 
 ---@class neotion.TriggersOpts
----@field enabled? boolean Enable triggers (default: false, for future / and @ support)
+---@field enabled? boolean Enable triggers (default: true)
 
 --- Set up input system for a buffer
 ---@param bufnr integer Buffer number
@@ -41,12 +41,12 @@ function M.setup(bufnr, opts)
     shortcuts.setup(bufnr, shortcuts_opts)
   end
 
-  -- Future: Set up triggers for / and @ commands
-  -- local triggers_opts = opts.triggers or {}
-  -- if triggers_opts.enabled then
-  --   local triggers = require('neotion.input.triggers')
-  --   triggers.setup(bufnr, triggers_opts)
-  -- end
+  -- Set up triggers for /, [[, and @ commands
+  local triggers_opts = opts.triggers or {}
+  if triggers_opts.enabled ~= false then
+    local triggers = require('neotion.input.triggers')
+    triggers.setup(bufnr, triggers_opts)
+  end
 end
 
 return M

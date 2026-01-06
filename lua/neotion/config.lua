@@ -183,7 +183,7 @@ local default_config = {
       color = true,
     },
     triggers = {
-      enabled = false, -- Phase 8+: enable for / and @ support
+      enabled = true, -- Slash commands, [[ link completion, @ mentions
     },
   },
   render = {

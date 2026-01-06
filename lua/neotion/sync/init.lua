@@ -134,17 +134,27 @@ function M.execute(bufnr, plan, callback)
       end
 
       -- Create block JSON for the new type
-      local new_block = {
-        type = tc.new_type,
-        [tc.new_type] = {
-          rich_text = {
-            {
-              type = 'text',
-              text = { content = tc.content, link = nil },
+      local new_block
+      if tc.new_type == 'divider' then
+        -- Divider has no content, just empty object
+        new_block = {
+          type = 'divider',
+          divider = {},
+        }
+      else
+        -- Text-based blocks (paragraph, heading, bullet, quote, etc.)
+        new_block = {
+          type = tc.new_type,
+          [tc.new_type] = {
+            rich_text = {
+              {
+                type = 'text',
+                text = { content = tc.content, link = nil },
+              },
             },
           },
-        },
-      }
+        }
+      end
 
       log.debug('Step 2: Creating new block', {
         page_id = page_id,

@@ -207,7 +207,7 @@ describe('neotion.config', function()
       assert.equals(300, cfg.search.debounce_ms)
       assert.is_true(cfg.search.show_cached)
       assert.is_true(cfg.search.live_search)
-      assert.equals(50, cfg.search.limit)
+      assert.equals(100, cfg.search.limit) -- Notion API returns max 100
     end)
 
     it('should accept valid search config', function()
@@ -280,7 +280,7 @@ describe('neotion.config', function()
       local cfg = config.get()
       assert.equals(500, cfg.search.debounce_ms)
       assert.is_true(cfg.search.show_cached) -- default preserved
-      assert.equals(50, cfg.search.limit) -- default preserved
+      assert.equals(100, cfg.search.limit) -- default preserved (Notion API max)
     end)
   end)
 end)

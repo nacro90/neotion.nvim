@@ -37,11 +37,6 @@ end
 function M.set(query, page_ids)
   local normalized = M.normalize_query(query)
 
-  -- Don't cache empty queries - use frecency instead
-  if normalized == '' then
-    return false
-  end
-
   local db = get_db()
   if not db then
     log.warn('Database not available for query cache')
@@ -64,7 +59,7 @@ function M.set(query, page_ids)
   })
 
   if success then
-    log.debug('Cached query', { query = normalized, count = #page_ids })
+    log.debug('Cached query', { query = normalized, count = #page_ids, is_empty = normalized == '' })
     -- Evict old entries if over limit
     local config_ok, config = pcall(require, 'neotion.config')
     if config_ok then
@@ -85,11 +80,6 @@ end
 ---@return table? result { page_ids: string[], cached_at: number, result_count: number } or nil
 function M.get(query)
   local normalized = M.normalize_query(query)
-
-  -- Empty queries should use frecency, not query cache
-  if normalized == '' then
-    return nil
-  end
 
   local db = get_db()
   if not db then
@@ -116,6 +106,8 @@ function M.get(query)
     return nil
   end
 
+  log.debug('Query cache hit', { query = normalized, count = #page_ids, is_empty = normalized == '' })
+
   return {
     page_ids = page_ids,
     cached_at = row.cached_at,
@@ -132,8 +124,9 @@ end
 function M.get_with_prefix_fallback(query)
   local normalized = M.normalize_query(query)
 
+  -- Empty query: just do exact match, no prefix fallback makes sense
   if normalized == '' then
-    return nil
+    return M.get(normalized)
   end
 
   -- Try exact match first

@@ -83,11 +83,11 @@ describe('neotion.ui.picker', function()
   end)
 
   describe('select', function()
-    it('should notify when no pages found', function()
+    it('should notify when no items found', function()
       local notified = false
       local original_notify = vim.notify
       vim.notify = function(msg, level)
-        if msg:match('No pages found') then
+        if msg:match('No items found') then
           notified = true
           assert.are.equal(vim.log.levels.WARN, level)
         end

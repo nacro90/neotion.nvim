@@ -51,16 +51,16 @@ function M.setup_extmarks(bufnr, header_lines)
     block:set_line_range(current_line, current_line + line_count - 1)
 
     -- Create extmark at block start
-    -- Note: We use end_right_gravity = false to prevent extmarks from expanding
-    -- when text is inserted at the boundary between blocks
+    -- right_gravity = true: Insertions at block START stay BEFORE the block (not absorbed)
+    -- end_right_gravity = false: Insertions at block END stay AFTER the block (not absorbed)
     if vim.api.nvim_buf_is_valid(bufnr) then
       local end_row = current_line + line_count - 1 - 1 -- 0-indexed end row
       local line_content = vim.api.nvim_buf_get_lines(bufnr, end_row, end_row + 1, false)[1] or ''
       local extmark_id = vim.api.nvim_buf_set_extmark(bufnr, ns_id, current_line - 1, 0, {
         end_row = end_row,
         end_col = #line_content, -- End at last character of line
-        right_gravity = false,
-        end_right_gravity = false, -- Prevent expansion
+        right_gravity = true, -- Insertions at start stay before block
+        end_right_gravity = false, -- Insertions at end stay after block
       })
       block_extmarks[bufnr][i] = extmark_id
 

@@ -118,6 +118,17 @@ describe('cache.query_cache', function()
       local result = query_cache.get('test')
       assert.are.same(page_ids, result.page_ids)
     end)
+
+    it('should store empty query', function()
+      -- Empty query is now cached to preserve Notion's relevance order for "recent" pages
+      local page_ids = { 'recent1', 'recent2', 'recent3' }
+      local ok = query_cache.set('', page_ids)
+      assert.is_true(ok)
+
+      local result = query_cache.get('')
+      assert.is_not_nil(result)
+      assert.are.same(page_ids, result.page_ids)
+    end)
   end)
 
   describe('get', function()
@@ -143,12 +154,14 @@ describe('cache.query_cache', function()
       assert.is_not_nil(result)
     end)
 
-    it('should return nil for empty query', function()
-      -- Empty query should use frecency, not query cache
-      query_cache.set('', { 'id1' })
+    it('should return cached result for empty query', function()
+      -- Empty query is now cached to preserve Notion's relevance order
+      local page_ids = { 'id1', 'id2', 'id3' }
+      query_cache.set('', page_ids)
       local result = query_cache.get('')
-      -- We don't cache empty queries - use frecency instead
-      assert.is_nil(result)
+      assert.is_not_nil(result)
+      assert.are.same(page_ids, result.page_ids)
+      assert.are.equal(3, result.result_count)
     end)
   end)
 
@@ -195,7 +208,18 @@ describe('cache.query_cache', function()
       assert.is_false(result.is_fallback)
     end)
 
-    it('should return nil for empty query', function()
+    it('should return cached result for empty query', function()
+      -- Empty query should use exact match, no prefix fallback makes sense
+      query_cache.set('', { 'id_empty1', 'id_empty2' })
+      local result = query_cache.get_with_prefix_fallback('')
+      assert.is_not_nil(result)
+      assert.are.same({ 'id_empty1', 'id_empty2' }, result.page_ids)
+      -- is_fallback should be false or nil for direct match
+      assert.is_false(result.is_fallback or false)
+    end)
+
+    it('should return nil for empty query when not cached', function()
+      -- Empty query not in cache, should return nil (frecency fallback in caller)
       local result = query_cache.get_with_prefix_fallback('')
       assert.is_nil(result)
     end)

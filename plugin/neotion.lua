@@ -587,14 +587,9 @@ vim.api.nvim_create_autocmd('InsertEnter', {
       return
     end
 
-    -- If no block found and not in header, this is an untracked line (edge case)
-    if not block and line > header_line_count then
-      vim.schedule(function()
-        vim.cmd('stopinsert')
-        vim.notify('[neotion] Cannot edit this line', vim.log.levels.WARN)
-      end)
-      return
-    end
+    -- NOTE: If no block found (orphan line), allow editing
+    -- Orphan lines are created when user adds new lines (e.g., pressing 'o')
+    -- These will be converted to new blocks on sync
   end,
   desc = 'Neotion: Protect read-only blocks and header',
 })
@@ -621,7 +616,10 @@ vim.api.nvim_create_autocmd('InsertCharPre', {
       is_protected = true
     else
       local block = model.get_block_at_line(bufnr, line)
-      if not block or not block:is_editable() then
+      -- Only protect if block exists AND is not editable
+      -- NOTE: If no block (orphan line), allow editing - these are new lines
+      -- created by user (e.g., pressing 'o') that will become blocks on sync
+      if block and not block:is_editable() then
         is_protected = true
       end
     end

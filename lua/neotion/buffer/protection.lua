@@ -32,23 +32,41 @@ end
 ---@param bufnr integer
 local function snapshot_readonly_content(bufnr)
   local mapping = require('neotion.model.mapping')
-  local blocks = mapping.get_blocks(bufnr)
 
   if not buffer_state[bufnr] then
     buffer_state[bufnr] = { enabled = true, last_content = {} }
   end
 
+  -- Refresh line ranges from extmarks to ensure we snapshot at correct positions
+  mapping.refresh_line_ranges(bufnr)
+
+  local blocks = mapping.get_blocks(bufnr)
   buffer_state[bufnr].last_content = {}
 
+  local snapshot_count = 0
   for i, block in ipairs(blocks) do
     if not block:is_editable() then
       local start_line, end_line = block:get_line_range()
       if start_line and end_line then
         local lines = vim.api.nvim_buf_get_lines(bufnr, start_line - 1, end_line, false)
-        buffer_state[bufnr].last_content[i] = table.concat(lines, '\n')
+        local content = table.concat(lines, '\n')
+        buffer_state[bufnr].last_content[i] = content
+        snapshot_count = snapshot_count + 1
+
+        log.debug('Snapshot read-only block', {
+          index = i,
+          block_type = block:get_type(),
+          line_range = { start_line, end_line },
+          content_preview = content:sub(1, 40),
+        })
       end
     end
   end
+
+  log.debug('Snapshot complete', {
+    bufnr = bufnr,
+    readonly_blocks_snapshotted = snapshot_count,
+  })
 end
 
 --- Check and restore read-only blocks if modified
@@ -56,25 +74,48 @@ end
 ---@return boolean was_restored
 local function check_and_restore(bufnr)
   local mapping = require('neotion.model.mapping')
-  local blocks = mapping.get_blocks(bufnr)
-  local state = buffer_state[bufnr]
 
+  local state = buffer_state[bufnr]
   if not state or not state.enabled then
+    log.debug('check_and_restore: protection disabled or no state', { bufnr = bufnr })
     return false
   end
 
+  -- CRITICAL: Refresh line ranges from extmarks BEFORE checking
+  -- This ensures we check the correct lines after edits shift block positions
+  mapping.refresh_line_ranges(bufnr)
+
+  local blocks = mapping.get_blocks(bufnr)
+  local readonly_count = 0
+
   for i, block in ipairs(blocks) do
     if not block:is_editable() then
+      readonly_count = readonly_count + 1
       local start_line, end_line = block:get_line_range()
+
       if start_line and end_line then
         local lines = vim.api.nvim_buf_get_lines(bufnr, start_line - 1, end_line, false)
         local current_content = table.concat(lines, '\n')
         local expected_content = state.last_content[i]
 
+        -- Log comparison for debugging
+        log.debug('Checking read-only block', {
+          index = i,
+          block_type = block:get_type(),
+          block_id = block:get_id(),
+          line_range = { start_line, end_line },
+          current_preview = current_content:sub(1, 40),
+          expected_preview = expected_content and expected_content:sub(1, 40) or '(nil)',
+          content_match = expected_content == current_content,
+        })
+
         if expected_content and current_content ~= expected_content then
-          log.debug('Read-only block modified, restoring', {
+          log.warn('Read-only block MODIFIED, restoring with undo', {
             block_type = block:get_type(),
             block_id = block:get_id(),
+            line_range = { start_line, end_line },
+            expected = expected_content:sub(1, 50),
+            got = current_content:sub(1, 50),
           })
 
           -- Restore content - use undo
@@ -82,9 +123,20 @@ local function check_and_restore(bufnr)
           vim.notify('Read-only block cannot be modified', vim.log.levels.WARN)
           return true
         end
+      else
+        log.debug('Read-only block has nil line range (deleted)', {
+          index = i,
+          block_type = block:get_type(),
+        })
       end
     end
   end
+
+  log.debug('check_and_restore complete', {
+    bufnr = bufnr,
+    readonly_blocks_checked = readonly_count,
+    restored = false,
+  })
 
   return false
 end

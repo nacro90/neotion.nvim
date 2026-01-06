@@ -927,5 +927,100 @@ describe('neotion.model.mapping', function()
       assert.are.equal(1, #orphans)
       assert.are.equal('block1', orphans[1].after_block_id)
     end)
+
+    it('should detect orphan after read-only block (callout scenario)', function()
+      -- Simulate callout (read-only) followed by paragraph
+      -- This tests the scenario where user presses 'o' after a read-only block
+      local function create_readonly_block(id, block_type, content)
+        local block = create_typed_block(id, block_type, content)
+        block.editable = false -- Mark as read-only
+        return block
+      end
+
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'Before callout'),
+        create_readonly_block('callout1', 'callout', '> 💡 This is a callout'),
+        create_typed_block('para2', 'paragraph', 'After callout'),
+      }
+      blocks[1]:set_line_range(1, 1)
+      blocks[2]:set_line_range(2, 2)
+      blocks[3]:set_line_range(3, 3)
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'Before callout',
+        '> 💡 This is a callout',
+        'After callout',
+      })
+
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- Simulate 'o' after callout: insert new empty line at position 3 (after callout)
+      -- This pushes 'After callout' to line 4
+      vim.api.nvim_buf_set_lines(bufnr, 2, 2, false, { '' })
+
+      -- Refresh line ranges from extmarks
+      mapping.refresh_line_ranges(bufnr)
+
+      -- Now buffer is:
+      -- Line 1: Before callout
+      -- Line 2: > 💡 This is a callout
+      -- Line 3: (new empty line - orphan)
+      -- Line 4: After callout
+
+      -- Verify callout is still at line 2
+      local callout_start, callout_end = blocks[2]:get_line_range()
+      assert.are.equal(2, callout_start, 'Callout should still be at line 2')
+      assert.are.equal(2, callout_end)
+
+      -- Verify paragraph moved to line 4
+      local para_start, para_end = blocks[3]:get_line_range()
+      assert.are.equal(4, para_start, 'Paragraph should have moved to line 4')
+      assert.are.equal(4, para_end)
+
+      -- Detect orphans
+      local orphans = mapping.detect_orphan_lines(bufnr, 0)
+      assert.are.equal(1, #orphans, 'Should detect 1 orphan line')
+      assert.are.equal(3, orphans[1].start_line, 'Orphan should be at line 3')
+      assert.are.equal(3, orphans[1].end_line)
+      assert.are.equal('', orphans[1].content[1], 'Orphan content should be empty')
+      assert.are.equal('callout1', orphans[1].after_block_id, 'Orphan should be after callout block')
+    end)
+
+    it('should detect orphan after divider (o command scenario)', function()
+      local blocks = {
+        create_typed_block('para1', 'paragraph', 'Before'),
+        create_typed_block('div1', 'divider', '---'),
+        create_typed_block('para2', 'paragraph', 'After'),
+      }
+      -- divider is read-only
+      blocks[2].editable = false
+
+      blocks[1]:set_line_range(1, 1)
+      blocks[2]:set_line_range(2, 2)
+      blocks[3]:set_line_range(3, 3)
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'Before',
+        '---',
+        'After',
+      })
+
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- Simulate 'o' after divider: insert new line
+      vim.api.nvim_buf_set_lines(bufnr, 2, 2, false, { 'New content typed by user' })
+
+      -- Refresh line ranges
+      mapping.refresh_line_ranges(bufnr)
+
+      -- Detect orphans
+      local orphans = mapping.detect_orphan_lines(bufnr, 0)
+      assert.are.equal(1, #orphans, 'Should detect 1 orphan line')
+      assert.are.equal(3, orphans[1].start_line, 'Orphan should be at line 3')
+      assert.are.equal('New content typed by user', orphans[1].content[1])
+      assert.are.equal('div1', orphans[1].after_block_id, 'Orphan should be after divider')
+    end)
   end)
 end)

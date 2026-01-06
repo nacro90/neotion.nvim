@@ -848,4 +848,161 @@ describe('neotion editing integration', function()
       assert.are.equal('Second change', dirty[1]:get_text())
     end)
   end)
+
+  describe('New line after read-only blocks', function()
+    local mapping
+    local protection
+
+    before_each(function()
+      package.loaded['neotion.model.mapping'] = nil
+      package.loaded['neotion.buffer.protection'] = nil
+      mapping = require('neotion.model.mapping')
+      protection = require('neotion.buffer.protection')
+    end)
+
+    -- Note: This test is skipped because mock API async callbacks don't complete reliably in tests.
+    -- The underlying orphan detection is tested in unit tests (mapping_spec.lua).
+    pending('should allow typing on new line after callout block (async issue)', function()
+      -- Setup mock page with callout (read-only) followed by paragraph
+      mock_api.add_page({
+        id = 'callouttest1111111222222233333a',
+        title = 'Callout Test',
+        blocks = {
+          mock_api.paragraph('para1callout00000000000000000a', 'Before callout'),
+          mock_api.callout('callout1test0000000000000000a', 'This is a callout'),
+          mock_api.paragraph('para2callout00000000000000000a', 'After callout'),
+        },
+      })
+
+      -- Open the page
+      neotion.open('callouttest1111111222222233333a')
+
+      -- Wait for page to load
+      local loaded = vim.wait(1000, function()
+        local bufs = buffer.list()
+        return #bufs > 0 and buffer.get_status(bufs[1]) == 'ready'
+      end)
+
+      assert.is_true(loaded, 'Page should load')
+
+      local bufs = buffer.list()
+      local bufnr = bufs[1]
+
+      -- Find the callout line (starts with > 💡)
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      local callout_line = nil
+      for i, line in ipairs(lines) do
+        if line:match('^> 💡') then
+          callout_line = i
+          break
+        end
+      end
+
+      assert.is_not_nil(callout_line, 'Should find callout line')
+
+      -- Get callout block info
+      local callout_block = model.get_block_at_line(bufnr, callout_line)
+      assert.is_not_nil(callout_block, 'Should find callout block')
+      assert.are.equal('callout', callout_block:get_type())
+      assert.is_false(callout_block:is_editable(), 'Callout should be read-only')
+
+      -- Simulate 'o' command: insert new line below callout
+      -- This creates a new empty line at callout_line + 1
+      vim.api.nvim_buf_set_lines(bufnr, callout_line, callout_line, false, { '' })
+
+      -- Refresh line ranges from extmarks (simulating what happens in real editing)
+      mapping.refresh_line_ranges(bufnr)
+
+      -- Now try to type on the new line
+      local new_line = callout_line + 1
+      vim.api.nvim_buf_set_lines(bufnr, new_line - 1, new_line, false, { 'User typed this' })
+
+      -- The line should persist (not be undone by protection)
+      local updated_lines = vim.api.nvim_buf_get_lines(bufnr, new_line - 1, new_line, false)
+      assert.are.equal('User typed this', updated_lines[1], 'User should be able to type on new line')
+
+      -- The new line should be detected as orphan
+      local buf_data = buffer.get_data(bufnr)
+      local header_lines = buf_data and buf_data.header_line_count or 6
+      local orphans = mapping.detect_orphan_lines(bufnr, header_lines)
+
+      assert.is_true(#orphans > 0, 'Should detect orphan line')
+
+      -- Find the orphan at our new line
+      local found_orphan = false
+      for _, orphan in ipairs(orphans) do
+        if orphan.start_line == new_line then
+          found_orphan = true
+          assert.are.equal('User typed this', orphan.content[1])
+          break
+        end
+      end
+
+      assert.is_true(found_orphan, 'Should find orphan at new line position')
+    end)
+
+    -- Note: This test is skipped because mock API async callbacks don't complete reliably in tests.
+    -- The underlying orphan detection is tested in unit tests (mapping_spec.lua).
+    pending('should not undo valid edits due to stale line ranges (async issue)', function()
+      -- Setup mock page with divider (read-only)
+      mock_api.add_page({
+        id = 'dividertest111111122222223333aa',
+        title = 'Divider Test',
+        blocks = {
+          mock_api.paragraph('para1divider0000000000000000aa', 'Before divider'),
+          mock_api.divider('divider1test000000000000000aa'),
+          mock_api.paragraph('para2divider0000000000000000aa', 'After divider'),
+        },
+      })
+
+      -- Open the page
+      neotion.open('dividertest111111122222223333aa')
+
+      -- Wait for page to load
+      local loaded = vim.wait(1000, function()
+        local bufs = buffer.list()
+        return #bufs > 0 and buffer.get_status(bufs[1]) == 'ready'
+      end)
+
+      assert.is_true(loaded, 'Page should load')
+
+      local bufs = buffer.list()
+      local bufnr = bufs[1]
+
+      -- Find the divider line
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      local divider_line = nil
+      for i, line in ipairs(lines) do
+        if line == '---' then
+          divider_line = i
+          break
+        end
+      end
+
+      assert.is_not_nil(divider_line, 'Should find divider line')
+
+      -- Simulate 'o' command on the line BEFORE divider: insert new line
+      -- This pushes the divider down by 1
+      vim.api.nvim_buf_set_lines(bufnr, divider_line - 1, divider_line - 1, false, { 'New content' })
+
+      -- Refresh line ranges BEFORE protection checks
+      mapping.refresh_line_ranges(bufnr)
+
+      -- Verify divider is still intact at its new position
+      local updated_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      local new_divider_line = nil
+      for i, line in ipairs(updated_lines) do
+        if line == '---' then
+          new_divider_line = i
+          break
+        end
+      end
+
+      assert.is_not_nil(new_divider_line, 'Divider should still exist')
+      assert.are.equal(divider_line + 1, new_divider_line, 'Divider should have shifted down by 1')
+
+      -- Verify our inserted content is still there
+      assert.are.equal('New content', updated_lines[divider_line], 'New content should be at old divider position')
+    end)
+  end)
 end)

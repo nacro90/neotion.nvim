@@ -237,6 +237,42 @@ function M.bulleted_list_item(id, text)
   }
 end
 
+---Create a mock callout block
+---@param id string
+---@param text string
+---@param icon? string Emoji icon (default: '💡')
+---@return table
+function M.callout(id, text, icon)
+  return {
+    id = id,
+    type = 'callout',
+    has_children = false,
+    callout = {
+      rich_text = {
+        {
+          type = 'text',
+          text = { content = text, link = nil },
+          plain_text = text,
+          href = nil,
+          annotations = {
+            bold = false,
+            italic = false,
+            strikethrough = false,
+            underline = false,
+            code = false,
+            color = 'default',
+          },
+        },
+      },
+      icon = {
+        type = 'emoji',
+        emoji = icon or '💡',
+      },
+      color = 'gray_background',
+    },
+  }
+end
+
 ---Create a mock page with standard structure
 ---@param id string
 ---@param title string

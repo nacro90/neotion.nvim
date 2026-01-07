@@ -56,10 +56,15 @@ lua/neotion/
 
 Complete editing experience overhaul:
 
-- **Block Absorption Fix**: `right_gravity = true` extmark ayari
-- **Orphan Line Handling**: Block'lara ait olmayan satirlar
-- **New Block Creation**: `o` sonrasi yeni block olusturma
-- **Type Detection**: `# ` → heading, `- ` → bullet, `1. ` → numbered, `---` → divider
+| Sub-Phase | Status | Description |
+|-----------|--------|-------------|
+| 10.1-10.5 | Done | Block fixes, orphan handling, type detection |
+| 10.6 | **Current** | Virtual lines (block spacing) |
+| 10.7 | TODO | Gutter icons (configurable) |
+| 10.8 | TODO | Enter/Shift+Enter editing model |
+| 10.9 | TODO | Continuation markers |
+
+**Current Plan**: `~/.claude/plans/quizzical-stargazing-ember.md`
 
 Detaylar: `TODO.md`
 

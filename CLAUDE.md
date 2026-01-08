@@ -59,10 +59,14 @@ Complete editing experience overhaul:
 | Sub-Phase | Status | Description |
 |-----------|--------|-------------|
 | 10.1-10.5 | Done | Block fixes, orphan handling, type detection |
-| 10.6 | **Current** | Virtual lines (block spacing) |
-| 10.7 | TODO | Gutter icons (configurable) |
-| 10.8 | TODO | Enter/Shift+Enter editing model |
-| 10.9 | TODO | Continuation markers |
+| 10.6 | Done | Virtual lines (block spacing) |
+| 10.6.1 | Done | Code block detection bug fix (2026-01-08) |
+| 10.7 | **Current** | Empty paragraph spacing optimization |
+| 10.8 | TODO | Gutter icons (configurable) |
+| 10.9 | TODO | Enter/Shift+Enter editing model |
+| 10.10 | TODO | Continuation markers |
+
+**Recent Work (2026-01-08)**: Fixed critical bug where code fences (` ``` `) were detected as paragraphs instead of code blocks. Added multi-line handling, language extraction, and 12 tests. All 87 tests passing.
 
 **Current Plan**: `~/.claude/plans/quizzical-stargazing-ember.md`
 

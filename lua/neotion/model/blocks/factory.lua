@@ -258,7 +258,6 @@ local function split_orphan_by_type_boundaries(lines)
         in_code_block = false
         code_block_start = nil
       end
-
     elseif line_type == 'code' then
       -- Start code block
       if current_segment then

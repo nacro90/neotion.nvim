@@ -255,6 +255,12 @@ function NumberedListBlock:format_with_markers()
   return notion.render(segments)
 end
 
+---Get the gutter icon for this numbered list block
+---@return string numbered icon
+function NumberedListBlock:get_gutter_icon()
+  return '#'
+end
+
 -- Module interface for registry
 M.new = NumberedListBlock.new
 M.is_editable = function()

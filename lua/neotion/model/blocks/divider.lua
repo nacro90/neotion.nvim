@@ -77,6 +77,12 @@ function DividerBlock:render(ctx)
   return true
 end
 
+---Get the gutter icon for this divider block
+---@return string divider icon
+function DividerBlock:get_gutter_icon()
+  return '──'
+end
+
 -- Module interface for registry
 M.new = DividerBlock.new
 M.is_editable = function()

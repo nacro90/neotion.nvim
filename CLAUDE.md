@@ -61,12 +61,12 @@ Complete editing experience overhaul:
 | 10.1-10.5 | Done | Block fixes, orphan handling, type detection |
 | 10.6 | Done | Virtual lines (block spacing) |
 | 10.6.1 | Done | Code block detection bug fix (2026-01-08) |
-| 10.7 | **Current** | Empty paragraph spacing optimization |
-| 10.8 | TODO | Gutter icons (configurable) |
-| 10.9 | TODO | Enter/Shift+Enter editing model |
+| 10.7 | Done | Empty paragraph spacing optimization |
+| 10.8 | Done | Gutter icons (configurable, default: off) |
+| 10.9 | **Next** | Enter/Shift+Enter editing model |
 | 10.10 | TODO | Continuation markers |
 
-**Recent Work (2026-01-08)**: Fixed critical bug where code fences (` ``` `) were detected as paragraphs instead of code blocks. Added multi-line handling, language extraction, and 12 tests. All 87 tests passing.
+**Recent Work (2026-01-08)**: Implemented gutter icons (Phase 10.8). Sign column shows block type indicators: H1/H2/H3 for headings, `•` for bullets, `#` for numbered lists, `│` for quotes, `<>` for code, `──` for dividers. Multi-line blocks show `│` continuation marker. Treesitter-linked highlights. 31 unit tests. Config: `render.gutter_icons = true`.
 
 **Current Plan**: `~/.claude/plans/quizzical-stargazing-ember.md`
 

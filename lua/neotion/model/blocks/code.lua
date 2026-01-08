@@ -255,6 +255,12 @@ function CodeBlock:has_children()
   return false
 end
 
+---Get the gutter icon for this code block
+---@return string code icon
+function CodeBlock:get_gutter_icon()
+  return '<>'
+end
+
 -- Module interface for registry
 M.new = CodeBlock.new
 M.is_editable = function()

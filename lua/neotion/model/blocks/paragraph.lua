@@ -220,6 +220,13 @@ function ParagraphBlock:format_with_markers()
   return notion.render(segments)
 end
 
+---Get the gutter icon for this paragraph block
+---Paragraphs don't have gutter icons
+---@return nil
+function ParagraphBlock:get_gutter_icon()
+  return nil
+end
+
 -- Module interface for registry
 M.new = ParagraphBlock.new
 M.is_editable = function()

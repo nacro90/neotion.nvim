@@ -77,6 +77,17 @@ M.GROUPS = {
 
   -- Link styling
   NeotionLink = { link = '@markup.link.url' },
+
+  -- Gutter icons (treesitter-linked for consistency)
+  NeotionGutterH1 = { link = '@markup.heading.1.markdown' },
+  NeotionGutterH2 = { link = '@markup.heading.2.markdown' },
+  NeotionGutterH3 = { link = '@markup.heading.3.markdown' },
+  NeotionGutterList = { link = '@markup.list.markdown' },
+  NeotionGutterQuote = { link = '@markup.quote' },
+  NeotionGutterCode = { link = '@markup.raw.markdown_inline' },
+  NeotionGutterDivider = { link = 'Comment' },
+  NeotionGutterDefault = { link = 'Comment' },
+  NeotionGutterContinuation = { link = 'NonText' },
 }
 
 --- Get highlight group names for an annotation

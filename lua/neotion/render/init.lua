@@ -239,6 +239,11 @@ function M.render_buffer(bufnr)
   if neotion_config.render.block_spacing then
     M.apply_block_spacing(bufnr)
   end
+
+  -- Apply gutter icons (sign column block indicators)
+  if neotion_config.render.gutter_icons then
+    M.apply_gutter_icons(bufnr)
+  end
 end
 
 --- Apply virtual lines between blocks for visual separation
@@ -256,12 +261,7 @@ function M.apply_block_spacing(bufnr)
   -- Pre-fetch orphan content to avoid repeated buffer reads
   local orphan_is_empty = {}
   for _, orphan in ipairs(orphans) do
-    local orphan_lines = vim.api.nvim_buf_get_lines(
-      bufnr,
-      orphan.start_line - 1,
-      orphan.end_line,
-      false
-    )
+    local orphan_lines = vim.api.nvim_buf_get_lines(bufnr, orphan.start_line - 1, orphan.end_line, false)
     local all_empty = true
     for _, line in ipairs(orphan_lines) do
       if vim.trim(line) ~= '' then
@@ -327,6 +327,41 @@ function M.apply_block_spacing(bufnr)
   end
 end
 
+--- Apply gutter icons (sign column) for each block
+---@param bufnr integer Buffer number
+function M.apply_gutter_icons(bufnr)
+  local mapping = require('neotion.model.mapping')
+  local gutter = require('neotion.render.gutter_icons')
+  local blocks = mapping.get_blocks(bufnr)
+
+  for _, block in ipairs(blocks) do
+    local start_line, end_line = block:get_line_range()
+    if not start_line or not end_line then
+      goto continue
+    end
+
+    local icon = block:get_gutter_icon()
+    if not icon then
+      goto continue
+    end
+
+    -- Get highlight group for this block type
+    local hl_group = gutter.get_highlight_group(block.type)
+
+    -- Apply icon to first line of block
+    extmarks.apply_sign_text(bufnr, start_line - 1, icon, hl_group)
+
+    -- Apply continuation markers to subsequent lines
+    if end_line > start_line then
+      for line = start_line + 1, end_line do
+        extmarks.apply_sign_text(bufnr, line - 1, gutter.CONTINUATION_MARKER, 'NeotionGutterContinuation')
+      end
+    end
+
+    ::continue::
+  end
+end
+
 --- Refresh buffer rendering (clear and re-render)
 ---@param bufnr integer
 function M.refresh(bufnr)
@@ -343,6 +378,7 @@ function M.refresh(bufnr)
 
   extmarks.clear_buffer(bufnr)
   extmarks.clear_virtual_lines(bufnr)
+  extmarks.clear_gutter_icons(bufnr)
   M.render_buffer(bufnr)
 end
 
@@ -441,8 +477,10 @@ function M.detach(bufnr)
   stop_timer(debounce_timers[bufnr])
   debounce_timers[bufnr] = nil
 
-  -- Clear extmarks
+  -- Clear extmarks (all namespaces)
   extmarks.clear_buffer(bufnr)
+  extmarks.clear_virtual_lines(bufnr)
+  extmarks.clear_gutter_icons(bufnr)
 
   -- Detach anti-conceal
   anti_conceal.detach(bufnr)

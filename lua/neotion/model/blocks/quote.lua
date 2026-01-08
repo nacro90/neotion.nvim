@@ -232,6 +232,12 @@ function QuoteBlock:format_with_markers()
   return notion.render(segments)
 end
 
+---Get the gutter icon for this quote block
+---@return string quote icon
+function QuoteBlock:get_gutter_icon()
+  return '│'
+end
+
 -- Module interface for registry
 M.new = QuoteBlock.new
 M.is_editable = function()

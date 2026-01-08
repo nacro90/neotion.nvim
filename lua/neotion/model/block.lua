@@ -187,6 +187,15 @@ function Block:is_empty_paragraph()
   return false
 end
 
+---Get the gutter icon for this block
+---Base implementation returns nil (no icon for unsupported blocks)
+---Override in subclasses to provide appropriate icons
+---@return string|nil icon text for sign column
+function Block:get_gutter_icon()
+  -- Base Block (unsupported) has no icon
+  return nil
+end
+
 M.Block = Block
 
 return M

@@ -223,6 +223,12 @@ function HeadingBlock:spacing_before()
   return 0
 end
 
+---Get the gutter icon for this heading block
+---@return string icon text (H1, H2, or H3)
+function HeadingBlock:get_gutter_icon()
+  return 'H' .. self.level
+end
+
 -- Module interface for registry
 M.new = HeadingBlock.new
 M.is_editable = function()

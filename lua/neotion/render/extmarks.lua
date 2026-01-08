@@ -13,6 +13,10 @@ M.NAMESPACE = vim.api.nvim_create_namespace('neotion')
 --- This prevents clear_line from removing virtual lines during anti-conceal re-renders
 M.VIRT_LINES_NAMESPACE = vim.api.nvim_create_namespace('neotion_virt_lines')
 
+--- Separate namespace for gutter icons (sign column)
+--- This prevents clear_line from removing gutter icons during anti-conceal re-renders
+M.GUTTER_NAMESPACE = vim.api.nvim_create_namespace('neotion_gutter')
+
 --- Clear all extmarks on a specific line
 ---@param bufnr integer
 ---@param line integer 0-indexed line number
@@ -115,6 +119,28 @@ function M.clear_virtual_lines(bufnr)
     return
   end
   vim.api.nvim_buf_clear_namespace(bufnr, M.VIRT_LINES_NAMESPACE, 0, -1)
+end
+
+--- Apply a sign text (gutter icon) to a line
+---@param bufnr integer Buffer number
+---@param line integer 0-indexed line number
+---@param sign_text string Sign text (max 2 display cells, see :h 'signcolumn')
+---@param hl_group string Highlight group for sign text
+---@return integer extmark_id
+function M.apply_sign_text(bufnr, line, sign_text, hl_group)
+  return vim.api.nvim_buf_set_extmark(bufnr, M.GUTTER_NAMESPACE, line, 0, {
+    sign_text = sign_text,
+    sign_hl_group = hl_group,
+  })
+end
+
+--- Clear all gutter icons (sign text) in a buffer
+---@param bufnr integer
+function M.clear_gutter_icons(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+  vim.api.nvim_buf_clear_namespace(bufnr, M.GUTTER_NAMESPACE, 0, -1)
 end
 
 --- Apply highlights for a rich text segment

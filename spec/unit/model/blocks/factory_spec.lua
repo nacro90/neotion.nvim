@@ -67,16 +67,40 @@ describe('neotion.model.blocks.factory', function()
       assert.are.equal('divider', block:get_type())
     end)
 
-    it('should return nil for empty lines', function()
+    -- Bug #10.7.1: Empty lines should create empty paragraph blocks
+    -- Scenario: User presses 'o', then '<esc>' - creates empty orphan line
+    -- Should sync as empty paragraph: { type: "paragraph", paragraph: { rich_text: [] } }
+    it('should create empty paragraph for single empty line', function()
       local block = factory.create_from_lines({ '' }, nil)
 
-      assert.is_nil(block)
+      assert.is_not_nil(block)
+      assert.are.equal('paragraph', block:get_type())
+      assert.are.equal('', block:get_text())
+      assert.is_true(block.is_new)
     end)
 
-    it('should return nil for all empty lines', function()
+    it('should create empty paragraph for all empty lines', function()
       local block = factory.create_from_lines({ '', '', '' }, nil)
 
-      assert.is_nil(block)
+      assert.is_not_nil(block)
+      assert.are.equal('paragraph', block:get_type())
+      assert.are.equal('', block:get_text())
+    end)
+
+    it('should set after_block_id for empty paragraph', function()
+      local block = factory.create_from_lines({ '' }, 'block456')
+
+      assert.is_not_nil(block)
+      assert.are.equal('paragraph', block:get_type())
+      assert.are.equal('block456', block.after_block_id)
+    end)
+
+    it('should generate temp_id for empty paragraph', function()
+      local block = factory.create_from_lines({ '' }, nil)
+
+      assert.is_not_nil(block)
+      assert.is_not_nil(block.temp_id)
+      assert.is_true(block.temp_id:match('^temp_') ~= nil)
     end)
 
     it('should set after_block_id for positioning', function()
@@ -219,7 +243,8 @@ describe('neotion.model.blocks.factory', function()
       assert.are.equal('paragraph', blocks[2]:get_type())
     end)
 
-    it('should skip empty orphan ranges', function()
+    -- Bug #10.7.1: Empty orphan ranges should create empty paragraphs
+    it('should create empty paragraph for empty orphan ranges', function()
       local orphans = {
         {
           start_line = 5,
@@ -231,7 +256,10 @@ describe('neotion.model.blocks.factory', function()
 
       local blocks = factory.create_from_orphans(orphans)
 
-      assert.are.equal(0, #blocks)
+      assert.are.equal(1, #blocks)
+      assert.are.equal('paragraph', blocks[1]:get_type())
+      assert.are.equal('', blocks[1]:get_text())
+      assert.are.equal('block1', blocks[1].after_block_id)
     end)
 
     it('should store orphan line info on blocks', function()

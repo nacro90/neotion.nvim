@@ -37,10 +37,24 @@ function M.create_from_lines(lines, after_block_id)
     end
   end
 
-  -- Skip if all lines are empty
+  -- If all lines are empty, create empty paragraph (Bug #10.7.1 fix)
+  -- Scenario: User presses 'o', then '<esc>' - creates empty orphan line
+  -- Should sync as empty paragraph: { type: "paragraph", paragraph: { rich_text: [] } }
   if not type_detection_line then
-    log.debug('Skipping empty orphan lines', { line_count = #lines })
-    return nil
+    log.debug('Creating empty paragraph from empty orphan lines', { line_count = #lines })
+    local raw = M.create_raw_block('paragraph', '', {})
+    local registry = require('neotion.model.registry')
+    local block = registry.deserialize(raw)
+    if block then
+      block.is_new = true
+      block.after_block_id = after_block_id
+      block.temp_id = generate_temp_id()
+      log.info('Created empty paragraph block from orphan', {
+        temp_id = block.temp_id,
+        after_block_id = after_block_id,
+      })
+    end
+    return block
   end
 
   -- Detect block type from first non-empty line content
@@ -305,6 +319,16 @@ local function split_orphan_by_type_boundaries(lines)
   -- This is intentional to preserve user content, but may need validation during sync
   if current_segment then
     table.insert(segments, current_segment)
+  end
+
+  -- Bug #10.7.1: If no segments created (all empty lines), create single paragraph segment
+  -- Scenario: User presses 'o', then '<esc>' - orphan has only empty lines
+  -- Should create one empty paragraph segment for sync
+  if #segments == 0 and #lines > 0 then
+    log.debug('Creating paragraph segment for all-empty orphan', {
+      line_count = #lines,
+    })
+    table.insert(segments, { type = nil, lines = lines, start_offset = 0 })
   end
 
   log.debug('Split orphan into segments', {

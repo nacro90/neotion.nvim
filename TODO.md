@@ -6,6 +6,14 @@ Random fikirler ve yapilacaklar.
 
 Editing deneyimini iyilestirmek icin tam bir refactor planliyoruz.
 
+**Latest Progress (2026-01-08)**:
+- ✅ Phase 10.6: Virtual lines for block spacing (commit: 8740bbf)
+- ✅ Phase 10.7: Empty paragraph spacing optimization (commit: fb499e2)
+- ✅ Phase 10.7.1: Empty line sync to Notion (creates empty paragraphs)
+- ⏸️ Phase 10.7.2: Live virtual line positioning for o/O (low priority)
+- ⏸️ Phase 10.8: Gutter icons
+- ⏸️ Phase 10.9: Enter/Shift+Enter editing model
+
 ### Block Management Issues
 
 - [ ] **Block Absorption Problem**: `o` ile yeni satir acildiginda, icerik sonraki blogun icine absorbe oluyor
@@ -73,6 +81,26 @@ Editing deneyimini iyilestirmek icin tam bir refactor planliyoruz.
 - [x] **Multi-line content rendering bug**: `buffer/init.lua:129` - `nvim_buf_set_lines` "replacement string item contains newlines" hatası veriyor
   - Multi-line block content'i render ederken oluşuyor
   - **FIX**: QuoteBlock, HeadingBlock, BulletedListBlock format() metodları newline'ları satırlara ayırıyor
+
+- [x] **Empty line doesn't sync to Notion**: `o` → boş satır → `<esc>` → sync → "No changes to sync" ✅ FIXED
+  - Root cause: Boş orphan line `segment_count=0` → block oluşturulmaz
+  - Fixed: `create_from_lines()` now creates empty paragraph for all-empty lines
+  - Fixed: `split_orphan_by_type_boundaries()` creates paragraph segment for all-empty orphans
+  - Creates: Empty paragraph `{ type: "paragraph", paragraph: { rich_text: [] } }` to Notion
+  - Phase 10.7.1 completed
+
+- [ ] **Live virtual line positioning for o/O**: `o`/`O` ile insert mode'a girince virtual line cursor'un yanlış tarafında
+  - Workaround: `<esc>` basınca düzeliyor ✅
+  - Priority: LOW (Phase 10.7.2 veya Phase 10.9'da düzelecek)
+
+- [ ] **Shift+Enter creates new block instead of soft break**: Paragraph içinde Shift+Enter yapınca yeni block açıyor
+  - Beklenen: Aynı block içinde yeni satır (multiline paragraph)
+  - Gerçekleşen: Yeni paragraph block oluşturuyor
+  - Phase 10.9'da fix edilecek (Enter/Shift+Enter editing model)
+
+- [x] **Code block detected as paragraph**: Code fence içeren content paragraph olarak algılanıyor ✅ FIXED (commit: a647eea)
+  - Added code fence pattern (` ``` `) to detection.lua
+  - Multi-line code block handling with state machine
 
 - [ ] Block links (`notion://block/id`) desteklenmiyor
 - [ ] Nested list items

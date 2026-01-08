@@ -118,6 +118,48 @@ describe('detection', function()
       end)
     end)
 
+    describe('code block detection', function()
+      it('should detect opening fence without language as code', function()
+        local block_type, prefix = detection.detect_type('```')
+        assert.are.equal('code', block_type)
+        assert.are.equal('```', prefix)
+      end)
+
+      it('should detect opening fence with language as code', function()
+        local block_type, prefix = detection.detect_type('```lua')
+        assert.are.equal('code', block_type)
+        assert.are.equal('```', prefix)
+      end)
+
+      it('should detect opening fence with different languages', function()
+        local langs = { 'python', 'javascript', 'rust', 'go' }
+        for _, lang in ipairs(langs) do
+          local block_type, prefix = detection.detect_type('```' .. lang)
+          assert.are.equal('code', block_type, 'Failed for language: ' .. lang)
+          assert.are.equal('```', prefix)
+        end
+      end)
+
+      it('should NOT detect closing fence as code', function()
+        -- Closing fence detection is context-dependent (handled by factory)
+        -- This test ensures we don't create a new code block from closing fence
+        local block_type, prefix = detection.detect_type('```')
+        assert.are.equal('code', block_type)
+      end)
+
+      it('should require backticks at line start', function()
+        local block_type, prefix = detection.detect_type('some text ```lua')
+        assert.is_nil(block_type)
+        assert.is_nil(prefix)
+      end)
+
+      it('should detect fence with spaces after language', function()
+        local block_type, prefix = detection.detect_type('```lua ')
+        assert.are.equal('code', block_type)
+        assert.are.equal('```', prefix)
+      end)
+    end)
+
     describe('edge cases', function()
       it('should handle nil input gracefully', function()
         local block_type, prefix = detection.detect_type(nil)

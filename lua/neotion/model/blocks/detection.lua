@@ -11,6 +11,9 @@ local M = {}
 
 ---@type neotion.PrefixPattern[]
 local PREFIX_PATTERNS = {
+  -- Code fence (opening fence detection - closing fences are context-dependent, handled by factory)
+  -- Pattern matches both ```lua and ``` (empty language)
+  { pattern = '^(```).*', prefix = '```', type = 'code' },
   -- Divider (exact match, no content)
   { pattern = '^(%-%-%-+)$', prefix = '---', type = 'divider' },
   -- Heading patterns (must come before bullets to not confuse with list)
@@ -29,6 +32,7 @@ local PREFIX_PATTERNS = {
 
 ---@type table<string, string>
 local TYPE_TO_PREFIX = {
+  code = '```',
   divider = '---',
   heading_1 = '# ',
   heading_2 = '## ',

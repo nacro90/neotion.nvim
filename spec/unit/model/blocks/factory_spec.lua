@@ -402,6 +402,123 @@ describe('neotion.model.blocks.factory', function()
         assert.are.equal('first', blocks[1]:get_text())
         assert.are.equal('second', blocks[2]:get_text())
       end)
+
+      -- Code block detection tests
+      describe('code block handling', function()
+        it('should detect opening fence and create code block', function()
+          local orphans = {
+            {
+              start_line = 1,
+              end_line = 4,
+              content = { '```lua', 'print("hello")', 'print("world")', '```' },
+              after_block_id = 'block1',
+            },
+          }
+
+          local blocks = factory.create_from_orphans(orphans)
+
+          assert.are.equal(1, #blocks)
+          assert.are.equal('code', blocks[1]:get_type())
+          local text = blocks[1]:get_text()
+          assert.is_true(text:find('print') ~= nil, 'Code content should be preserved')
+        end)
+
+        it('should detect code block without language (plain text)', function()
+          local orphans = {
+            {
+              start_line = 1,
+              end_line = 3,
+              content = { '```', 'some code', '```' },
+              after_block_id = 'block1',
+            },
+          }
+
+          local blocks = factory.create_from_orphans(orphans)
+
+          assert.are.equal(1, #blocks)
+          assert.are.equal('code', blocks[1]:get_type())
+        end)
+
+        it('should handle code block without closing fence', function()
+          local orphans = {
+            {
+              start_line = 1,
+              end_line = 3,
+              content = { '```python', 'def foo():', '    pass' },
+              after_block_id = 'block1',
+            },
+          }
+
+          local blocks = factory.create_from_orphans(orphans)
+
+          -- Should create code block with all remaining lines
+          assert.are.equal(1, #blocks)
+          assert.are.equal('code', blocks[1]:get_type())
+        end)
+
+        it('should split paragraph, code block, and paragraph', function()
+          local orphans = {
+            {
+              start_line = 1,
+              end_line = 5,
+              content = { 'intro text', '```js', 'console.log("test")', '```', 'outro text' },
+              after_block_id = 'block1',
+            },
+          }
+
+          local blocks = factory.create_from_orphans(orphans)
+
+          assert.are.equal(3, #blocks)
+          assert.are.equal('paragraph', blocks[1]:get_type())
+          assert.are.equal('code', blocks[2]:get_type())
+          assert.are.equal('paragraph', blocks[3]:get_type())
+        end)
+
+        it('should handle empty code block', function()
+          local orphans = {
+            {
+              start_line = 1,
+              end_line = 2,
+              content = { '```', '```' },
+              after_block_id = 'block1',
+            },
+          }
+
+          local blocks = factory.create_from_orphans(orphans)
+
+          assert.are.equal(1, #blocks)
+          assert.are.equal('code', blocks[1]:get_type())
+          assert.are.equal('', blocks[1]:get_text())
+        end)
+
+        it('should preserve multi-line code content', function()
+          local orphans = {
+            {
+              start_line = 1,
+              end_line = 6,
+              content = {
+                '```rust',
+                'fn main() {',
+                '    println!("Hello");',
+                '    println!("World");',
+                '}',
+                '```',
+              },
+              after_block_id = 'block1',
+            },
+          }
+
+          local blocks = factory.create_from_orphans(orphans)
+
+          assert.are.equal(1, #blocks)
+          assert.are.equal('code', blocks[1]:get_type())
+          local text = blocks[1]:get_text()
+          -- Check that all lines are preserved
+          assert.is_true(text:find('fn main') ~= nil)
+          assert.is_true(text:find('Hello') ~= nil)
+          assert.is_true(text:find('World') ~= nil)
+        end)
+      end)
     end)
   end)
 end)

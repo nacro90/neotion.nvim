@@ -55,6 +55,27 @@ function M.create_from_lines(lines, after_block_id)
     final_type = block_type,
   })
 
+  -- Special handling for code blocks
+  local language = nil
+  if block_type == 'code' then
+    -- Extract language from opening fence (e.g., "```lua" -> "lua")
+    -- Sanitize by taking only first word (before any whitespace)
+    local lang = type_detection_line:match('^```(.*)$')
+    if lang and lang ~= '' then
+      language = lang:gsub('^%s+', ''):gsub('%s.*$', '') -- Trim and take first word only
+      if language == '' then
+        language = 'plain text'
+      end
+    else
+      language = 'plain text'
+    end
+
+    log.debug('Extracted language from code fence', {
+      opening_fence = type_detection_line,
+      language = language,
+    })
+  end
+
   -- Build content, trimming leading empty lines and stripping prefix from type line
   -- Content should start from the type detection line
   local content
@@ -64,10 +85,20 @@ function M.create_from_lines(lines, after_block_id)
   for i = type_detection_index, #lines do
     local line = lines[i]
     if i == type_detection_index then
-      -- Strip prefix from the type detection line
-      table.insert(content_lines, detection.strip_prefix(line, prefix))
+      -- For code blocks, skip the opening fence entirely
+      if block_type == 'code' then
+        -- Don't add opening fence to content
+      else
+        -- Strip prefix from the type detection line
+        table.insert(content_lines, detection.strip_prefix(line, prefix))
+      end
     else
-      table.insert(content_lines, line)
+      -- Check if this is closing fence for code block
+      if block_type == 'code' and line:match('^```$') then
+        -- Don't add closing fence to content
+      else
+        table.insert(content_lines, line)
+      end
     end
   end
 
@@ -79,7 +110,7 @@ function M.create_from_lines(lines, after_block_id)
   content = table.concat(content_lines, '\n')
 
   -- Create minimal raw data structure for new block
-  local raw = M.create_raw_block(block_type, content)
+  local raw = M.create_raw_block(block_type, content, { language = language })
 
   -- Create block using registry deserialize
   local block = registry.deserialize(raw)
@@ -104,8 +135,11 @@ end
 --- Create raw block data for Notion API
 ---@param block_type string Block type
 ---@param content string Text content
+---@param opts? {language?: string} Optional parameters (e.g., language for code blocks)
 ---@return table raw Notion API compatible raw block data
-function M.create_raw_block(block_type, content)
+function M.create_raw_block(block_type, content, opts)
+  opts = opts or {}
+
   -- Handle special block types
   if block_type == 'divider' then
     return {
@@ -113,6 +147,35 @@ function M.create_raw_block(block_type, content)
       id = nil,
       -- vim.empty_dict() ensures JSON encodes as {} (object) not [] (array)
       divider = vim.empty_dict(),
+    }
+  end
+
+  -- Code block has different structure
+  if block_type == 'code' then
+    local rich_text = {
+      {
+        type = 'text',
+        text = { content = content },
+        plain_text = content,
+        annotations = {
+          bold = false,
+          italic = false,
+          strikethrough = false,
+          underline = false,
+          code = false,
+          color = 'default',
+        },
+      },
+    }
+
+    return {
+      type = 'code',
+      id = nil,
+      code = {
+        rich_text = rich_text,
+        language = opts.language or 'plain text',
+        caption = {},
+      },
     }
   end
 
@@ -150,7 +213,7 @@ function M.create_raw_block(block_type, content)
 end
 
 --- Split orphan lines into segments by type boundaries
---- Different block types (quote, heading, bullet, divider) become separate blocks
+--- Different block types (quote, heading, bullet, divider, code) become separate blocks
 --- Bug #10.2 fix: Prevents mixing different types into single block
 --- Bug #10.4 fix: Track start_offset for each segment for model integration
 ---@param lines string[] Lines to split
@@ -159,6 +222,8 @@ local function split_orphan_by_type_boundaries(lines)
   local detection = require('neotion.model.blocks.detection')
   local segments = {}
   local current_segment = nil
+  local in_code_block = false
+  local code_block_start = nil
 
   for line_index, line in ipairs(lines) do
     local line_type = detection.detect_type(line)
@@ -166,8 +231,33 @@ local function split_orphan_by_type_boundaries(lines)
     -- line_index is 1-based, offset should be 0-based
     local offset = line_index - 1
 
+    -- Special handling for code blocks
+    if in_code_block then
+      -- Inside code block: accumulate lines until closing fence
+      table.insert(current_segment.lines, line)
+
+      -- Check for closing fence (exactly "```")
+      if line:match('^```$') then
+        -- End code block
+        table.insert(segments, current_segment)
+        current_segment = nil
+        in_code_block = false
+        code_block_start = nil
+      end
+
+    elseif line_type == 'code' then
+      -- Start code block
+      if current_segment then
+        table.insert(segments, current_segment)
+        current_segment = nil
+      end
+
+      current_segment = { type = 'code', lines = { line }, start_offset = offset }
+      in_code_block = true
+      code_block_start = offset
+
     -- Dividers are ALWAYS single-line blocks
-    if line_type == 'divider' then
+    elseif line_type == 'divider' then
       if current_segment then
         table.insert(segments, current_segment)
         current_segment = nil
@@ -210,7 +300,9 @@ local function split_orphan_by_type_boundaries(lines)
     end
   end
 
-  -- Don't forget last segment
+  -- Don't forget last segment (handles unclosed code blocks)
+  -- Note: Unclosed code blocks (missing closing fence) will include all remaining lines
+  -- This is intentional to preserve user content, but may need validation during sync
   if current_segment then
     table.insert(segments, current_segment)
   end

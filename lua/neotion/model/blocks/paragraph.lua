@@ -151,6 +151,13 @@ function ParagraphBlock:get_text()
   return self.text
 end
 
+---Check if this is an empty paragraph
+---Efficient override: directly check text field
+---@return boolean True if text is empty or nil
+function ParagraphBlock:is_empty_paragraph()
+  return self.text == nil or self.text == ''
+end
+
 ---Check if block type has changed (Phase 5.8)
 ---@return boolean
 function ParagraphBlock:type_changed()

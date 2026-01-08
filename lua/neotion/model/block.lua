@@ -157,6 +157,36 @@ function Block:render(ctx)
   return false
 end
 
+---Get virtual lines count after this block (for spacing)
+---Override in subclasses that need different spacing (e.g., list items = 0)
+---@return integer Number of virtual lines after this block
+function Block:spacing_after()
+  return 1 -- Default: 1 virtual line after each block
+end
+
+---Get extra virtual lines before this block
+---Override in subclasses that need extra spacing before (e.g., heading_1)
+---@return integer Number of extra virtual lines before this block
+function Block:spacing_before()
+  return 0 -- Default: no extra spacing before
+end
+
+---Check if this block is a list item type (for grouping)
+---@return boolean True if this is a bulleted or numbered list item
+function Block:is_list_item()
+  local t = self.type
+  return t == 'bulleted_list_item' or t == 'numbered_list_item'
+end
+
+---Check if this is an empty paragraph
+---Base implementation always returns false (only real paragraph blocks can be empty)
+---Override in ParagraphBlock for actual empty paragraph detection
+---@return boolean True if this is a paragraph with empty text
+function Block:is_empty_paragraph()
+  -- Base Block is never an empty paragraph (real paragraphs use ParagraphBlock)
+  return false
+end
+
 M.Block = Block
 
 return M

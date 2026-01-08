@@ -233,6 +233,98 @@ function M.render_buffer(bufnr)
   for line = 0, line_count - 1 do
     M.render_line(bufnr, line)
   end
+
+  -- Apply block spacing (virtual lines between blocks)
+  local neotion_config = require('neotion.config').get()
+  if neotion_config.render.block_spacing then
+    M.apply_block_spacing(bufnr)
+  end
+end
+
+--- Apply virtual lines between blocks for visual separation
+---@param bufnr integer
+function M.apply_block_spacing(bufnr)
+  local mapping = require('neotion.model.mapping')
+  local blocks = mapping.get_blocks(bufnr)
+
+  -- Detect orphan lines once (for empty orphan lookahead)
+  local buffer_mod = require('neotion.buffer')
+  local buf_data = buffer_mod.get_data(bufnr)
+  local header_lines = buf_data and buf_data.header_line_count or 6
+  local orphans = mapping.detect_orphan_lines(bufnr, header_lines)
+
+  -- Pre-fetch orphan content to avoid repeated buffer reads
+  local orphan_is_empty = {}
+  for _, orphan in ipairs(orphans) do
+    local orphan_lines = vim.api.nvim_buf_get_lines(
+      bufnr,
+      orphan.start_line - 1,
+      orphan.end_line,
+      false
+    )
+    local all_empty = true
+    for _, line in ipairs(orphan_lines) do
+      if vim.trim(line) ~= '' then
+        all_empty = false
+        break
+      end
+    end
+    orphan_is_empty[orphan.start_line] = all_empty
+  end
+
+  -- Apply spacing after each block
+  for i, block in ipairs(blocks) do
+    local _, end_line = block:get_line_range()
+    if not end_line then
+      goto continue
+    end
+
+    local next_block = blocks[i + 1]
+    local spacing = block:spacing_after()
+
+    -- Priority 1: Empty paragraph/orphan lookahead (always takes precedence)
+    -- These should show minimal spacing for clean visual separation
+    local has_empty_after = false
+    if next_block and next_block:is_empty_paragraph() then
+      spacing = 0
+      has_empty_after = true
+    elseif #orphans > 0 then
+      -- Check if there's an empty orphan immediately after this block
+      local expected_next_line = end_line + 1
+      if orphan_is_empty[expected_next_line] then
+        spacing = 0
+        has_empty_after = true
+      end
+    end
+
+    -- Priority 2: List group logic (only if not overridden by empty lookahead)
+    if not has_empty_after and block:is_list_item() then
+      if not next_block or not next_block:is_list_item() then
+        spacing = 1 -- End of list group
+      end
+    end
+
+    -- Priority 3: Add spacing_before from next block (additive, but only if spacing > 0)
+    if next_block and spacing > 0 then
+      local extra_before = next_block:spacing_before()
+      if extra_before > 0 then
+        spacing = spacing + extra_before
+      end
+    end
+
+    -- Apply virtual lines at block end (0-indexed)
+    if spacing > 0 then
+      extmarks.apply_virtual_lines(bufnr, end_line - 1, spacing)
+    end
+
+    ::continue::
+  end
+
+  -- Apply spacing after orphan lines (new content not yet synced)
+  for _, orphan in ipairs(orphans) do
+    -- Add virtual line after orphan region end (0-indexed)
+    extmarks.apply_virtual_lines(bufnr, orphan.end_line - 1, 1)
+  end
 end
 
 --- Refresh buffer rendering (clear and re-render)
@@ -250,6 +342,7 @@ function M.refresh(bufnr)
   end
 
   extmarks.clear_buffer(bufnr)
+  extmarks.clear_virtual_lines(bufnr)
   M.render_buffer(bufnr)
 end
 

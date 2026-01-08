@@ -6,8 +6,12 @@ local highlight = require('neotion.render.highlight')
 
 local M = {}
 
---- Namespace for all neotion extmarks
+--- Namespace for all neotion extmarks (inline formatting, concealment, etc.)
 M.NAMESPACE = vim.api.nvim_create_namespace('neotion')
+
+--- Separate namespace for virtual lines (block spacing)
+--- This prevents clear_line from removing virtual lines during anti-conceal re-renders
+M.VIRT_LINES_NAMESPACE = vim.api.nvim_create_namespace('neotion_virt_lines')
 
 --- Clear all extmarks on a specific line
 ---@param bufnr integer
@@ -80,6 +84,37 @@ function M.apply_concealment(bufnr, line, start_col, end_col, replacement)
     end_col = end_col,
     conceal = replacement or '',
   })
+end
+
+--- Apply virtual lines after a position (for block spacing)
+--- Uses separate namespace to prevent clear_line from removing them
+---@param bufnr integer Buffer number
+---@param line integer 0-indexed line number
+---@param count integer Number of empty virtual lines to add
+---@return integer extmark_id
+function M.apply_virtual_lines(bufnr, line, count)
+  if count <= 0 then
+    return -1
+  end
+
+  local virt_lines = {}
+  for _ = 1, count do
+    table.insert(virt_lines, { { '', 'Normal' } })
+  end
+
+  return vim.api.nvim_buf_set_extmark(bufnr, M.VIRT_LINES_NAMESPACE, line, 0, {
+    virt_lines = virt_lines,
+    virt_lines_above = false,
+  })
+end
+
+--- Clear all virtual lines extmarks in a buffer
+---@param bufnr integer
+function M.clear_virtual_lines(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+  vim.api.nvim_buf_clear_namespace(bufnr, M.VIRT_LINES_NAMESPACE, 0, -1)
 end
 
 --- Apply highlights for a rich text segment

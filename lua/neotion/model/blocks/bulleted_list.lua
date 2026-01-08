@@ -230,6 +230,13 @@ function BulletedListBlock:render(ctx)
   return false
 end
 
+---List items have no spacing after (they're grouped)
+---Spacing is added at the end of the list group by render logic
+---@return integer
+function BulletedListBlock:spacing_after()
+  return 0
+end
+
 ---Check if block has children (nesting not supported in Phase 5.7)
 ---@return boolean
 function BulletedListBlock:has_children()

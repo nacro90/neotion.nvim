@@ -213,6 +213,16 @@ function HeadingBlock:format_with_markers()
   return notion.render(segments)
 end
 
+---Get extra virtual lines before this block
+---heading_1 gets extra spacing before for visual separation
+---@return integer
+function HeadingBlock:spacing_before()
+  if self.level == 1 then
+    return 1 -- Extra line before H1
+  end
+  return 0
+end
+
 -- Module interface for registry
 M.new = HeadingBlock.new
 M.is_editable = function()

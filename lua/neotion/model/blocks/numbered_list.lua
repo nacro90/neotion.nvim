@@ -225,6 +225,13 @@ function NumberedListBlock:render(ctx)
   return false
 end
 
+---List items have no spacing after (they're grouped)
+---Spacing is added at the end of the list group by render logic
+---@return integer
+function NumberedListBlock:spacing_after()
+  return 0
+end
+
 ---Check if block has children (nesting not supported)
 ---@return boolean
 function NumberedListBlock:has_children()

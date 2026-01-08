@@ -113,6 +113,17 @@ function RenderContext:clear()
   extmarks.clear_line(self.bufnr, self.line)
 end
 
+---Add virtual lines after current position (for block spacing)
+---@param count integer Number of empty virtual lines to add
+function RenderContext:virtual_lines(count)
+  if count <= 0 then
+    return
+  end
+
+  local extmarks = require('neotion.render.extmarks')
+  extmarks.apply_virtual_lines(self.bufnr, self.line, count)
+end
+
 M.RenderContext = RenderContext
 
 return M

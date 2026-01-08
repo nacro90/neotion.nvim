@@ -28,6 +28,7 @@
 ---@class neotion.RenderUserConfig
 ---@field enabled? boolean Enable rendering (default: true)
 ---@field debounce_ms? integer Debounce delay for re-rendering in ms (default: 100)
+---@field block_spacing? boolean Enable virtual lines between blocks (default: true)
 
 ---@class neotion.ThrottleUserConfig
 ---@field enabled? boolean Enable rate limiting (default: true)
@@ -98,6 +99,7 @@ vim.g.neotion = vim.g.neotion
 ---@class neotion.InternalRenderConfig
 ---@field enabled boolean
 ---@field debounce_ms integer
+---@field block_spacing boolean
 
 ---@class neotion.InternalThrottleConfig
 ---@field enabled boolean
@@ -189,6 +191,7 @@ local default_config = {
   render = {
     enabled = true,
     debounce_ms = 100, -- Debounce delay for re-rendering (0 = no debounce)
+    block_spacing = true, -- Virtual lines between blocks for visual separation
   },
   throttle = {
     enabled = true,
@@ -354,6 +357,7 @@ local function validate(opts)
         end,
         'number between 0 and 1000',
       },
+      ['render.block_spacing'] = { opts.render.block_spacing, { 'boolean', 'nil' }, 'boolean or nil' },
     })
     if not render_ok then
       return false, render_err

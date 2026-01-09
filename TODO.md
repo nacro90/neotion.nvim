@@ -66,32 +66,17 @@ Editing deneyimi refactor tamamlandi (2026-01-09).
 
 Editing experience'da tespit edilen kritik buglar. **Öncelikli** olarak çözülmeli.
 
-### Bug 11.1: Sync Sonrası Cache Güncellenmiyor (CRITICAL)
+### Bug 11.1: Sync Sonrası Cache Güncellenmiyor ✅ FIXED
 
-**Durum**: Sync sonrası local cache eski kalıyor, plugin'i kapatıp açınca eski cache'den okuyor.
+**Çözüm** (2026-01-09):
+- `sync/init.lua` → `M.execute` success callback'ine cache update eklendi
+- `cache_pages.save_content()` ve `sync_state.update_after_push()` çağrılıyor
+- Pull flow ile aynı pattern kullanıldı
+- 3 yeni test eklendi: success, failure, uninitialized edge case
 
-**Senaryo**:
-1. Sayfa aç → cache'den yüklenir
-2. Değişiklik yap → sync et → Notion'a gider ✅
-3. Plugin'i kapat/aç → **eski cache'den yüklenir** ❌
-4. Background refresh → sonunda güncellenir
-
-**Beklenen**: Sync başarılı olduktan sonra local cache de güncel olmalı.
-
-**Root Cause Analizi**:
-- Push işlemi API'ye gönderiyor ama cache güncellenmedi
-- `cache.pages` sadece pull sırasında güncelleniyor
-- Log'da görülen: `Page content cache hit` → eski veri
-
-**Çözüm**:
-- `sync.lua` success callback'inde cache update çağır
-- Hem `pages` cache'i (content) hem `query_cache` (search list) güncellenmeli
-- API response'unu cache'e yaz
-
-**Etkilenen Dosyalar**:
-- `lua/neotion/sync.lua` - success callback
-- `lua/neotion/cache/pages.lua` - cache update logic
-- `lua/neotion/cache/query_cache.lua` - search list invalidation
+**Değişiklikler**:
+- `lua/neotion/sync/init.lua:54-77` - cache update logic
+- `spec/unit/sync/init_spec.lua` - 3 new tests
 
 ---
 
@@ -177,13 +162,13 @@ Editing experience'da tespit edilen kritik buglar. **Öncelikli** olarak çözü
 
 ### Implementation Order
 
-| Bug | Priority | Complexity | Description |
-|-----|----------|------------|-------------|
-| 11.1 | CRITICAL | Medium | Cache sync - data loss riski |
-| 11.2 | CRITICAL | Medium | Enter behavior - UX broken |
-| 11.3 | HIGH | Low | Virtual line visual glitch |
+| Bug | Priority | Complexity | Status | Description |
+|-----|----------|------------|--------|-------------|
+| 11.1 | CRITICAL | Medium | ✅ Done | Cache sync - data loss riski |
+| 11.2 | CRITICAL | Medium | TODO | Enter behavior - UX broken |
+| 11.3 | HIGH | Low | TODO | Virtual line visual glitch |
 
-**Önerilen Sıra**: 11.1 → 11.2 → 11.3
+**Sıra**: ~~11.1~~ → 11.2 → 11.3
 
 ---
 

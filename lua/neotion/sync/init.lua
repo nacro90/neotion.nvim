@@ -51,6 +51,31 @@ function M.execute(bufnr, plan, callback)
           -- Mark all blocks as clean
           model.mark_all_clean(bufnr)
 
+          -- Bug 11.1: Update cache with synced blocks
+          local cache = require('neotion.cache')
+          if cache.is_initialized() then
+            local cache_pages = require('neotion.cache.pages')
+            local sync_state = require('neotion.cache.sync_state')
+
+            -- Get current blocks and serialize for cache
+            local blocks = model.get_blocks(bufnr)
+            local serialized = vim.tbl_map(function(b)
+              return b:serialize()
+            end, blocks)
+
+            -- Update content cache and sync state
+            local data = buffer.get_data(bufnr)
+            if data and data.page_id then
+              if cache_pages.save_content(data.page_id, serialized) then
+                local content_hash = cache.hash.page_content(serialized)
+                sync_state.update_after_push(data.page_id, content_hash)
+                log.debug('Cache updated after push', { page_id = data.page_id, block_count = #serialized })
+              else
+                log.warn('Failed to update cache after push', { page_id = data.page_id })
+              end
+            end
+          end
+
           -- Update buffer state
           buffer.update_data(bufnr, { last_sync = os.date('!%Y-%m-%dT%H:%M:%SZ') })
           buffer.set_status(bufnr, 'ready')

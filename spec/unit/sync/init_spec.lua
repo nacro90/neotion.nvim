@@ -471,4 +471,209 @@ describe('neotion.sync', function()
       assert.is_true(success, 'Should succeed with mixed operations')
     end)
   end)
+
+  -- Bug 11.1: Cache should be updated after successful sync
+  describe('cache update after sync', function()
+    local mock_cache
+    local mock_cache_pages
+    local mock_sync_state
+    local mock_hash
+
+    before_each(function()
+      -- Reset cache-related modules
+      package.loaded['neotion.cache'] = nil
+      package.loaded['neotion.cache.pages'] = nil
+      package.loaded['neotion.cache.sync_state'] = nil
+      package.loaded['neotion.cache.hash'] = nil
+
+      -- Create mock cache module
+      mock_cache = {
+        is_initialized = function()
+          return true
+        end,
+      }
+
+      -- Create mock cache.pages module
+      mock_cache_pages = {
+        save_content_calls = {},
+        save_content = function(page_id, blocks)
+          table.insert(mock_cache_pages.save_content_calls, {
+            page_id = page_id,
+            blocks = blocks,
+          })
+          return true
+        end,
+      }
+
+      -- Create mock sync_state module
+      mock_sync_state = {
+        update_after_push_calls = {},
+        update_after_push = function(page_id, content_hash)
+          table.insert(mock_sync_state.update_after_push_calls, {
+            page_id = page_id,
+            content_hash = content_hash,
+          })
+          return true
+        end,
+      }
+
+      -- Create mock hash module
+      mock_hash = {
+        page_content = function(blocks)
+          return 'mock-hash-' .. tostring(#blocks)
+        end,
+      }
+
+      -- Add hash to cache module (cache.hash pattern)
+      mock_cache.hash = mock_hash
+
+      -- Install mocks
+      package.loaded['neotion.cache'] = mock_cache
+      package.loaded['neotion.cache.pages'] = mock_cache_pages
+      package.loaded['neotion.cache.sync_state'] = mock_sync_state
+      package.loaded['neotion.cache.hash'] = mock_hash
+
+      -- Update mock_model to include get_blocks
+      mock_model.get_blocks = function(bufnr)
+        return {
+          create_mock_block({ id = 'block-1', text = 'First block' }),
+          create_mock_block({ id = 'block-2', text = 'Second block' }),
+        }
+      end
+
+      -- Re-require sync to pick up mocks
+      package.loaded['neotion.sync'] = nil
+      sync = require('neotion.sync')
+    end)
+
+    it('should update cache after successful sync', function()
+      local block = create_mock_block({
+        id = 'existing-block-id-000000000000000',
+        is_new = false,
+        temp_id = nil,
+        text = 'Updated text',
+      })
+
+      local plan = create_mock_plan({
+        updates = {
+          {
+            block = block,
+            block_id = 'existing-block-id-000000000000000',
+            content = 'Updated text',
+          },
+        },
+      })
+
+      local completed = false
+      local success = false
+
+      sync.execute(1, plan, function(ok)
+        completed = true
+        success = ok
+      end)
+
+      vim.wait(1000, function()
+        return completed
+      end)
+
+      assert.is_true(success, 'Should succeed')
+
+      -- Bug 11.1: Cache should be updated after sync
+      assert.are.equal(1, #mock_cache_pages.save_content_calls, 'Should call save_content once')
+
+      local cache_call = mock_cache_pages.save_content_calls[1]
+      assert.are.equal('test-page-id-00000000000000000', cache_call.page_id, 'Should use correct page_id')
+      assert.are.equal(2, #cache_call.blocks, 'Should save all blocks')
+
+      -- Sync state should be updated
+      assert.are.equal(1, #mock_sync_state.update_after_push_calls, 'Should call update_after_push once')
+      local sync_call = mock_sync_state.update_after_push_calls[1]
+      assert.are.equal('test-page-id-00000000000000000', sync_call.page_id, 'Should use correct page_id')
+      assert.is_truthy(sync_call.content_hash, 'Should include content hash')
+    end)
+
+    it('should NOT update cache when sync fails', function()
+      local block = create_mock_block({ temp_id = 'temp_fail' })
+
+      local plan = create_mock_plan({
+        creates = {
+          {
+            block = block,
+            content = 'Will fail',
+            block_type = 'paragraph',
+            temp_id = 'temp_fail',
+          },
+        },
+      })
+
+      -- Set up failure response
+      mock_blocks_api.append_result = {
+        error = 'API rate limit exceeded',
+        blocks = {},
+      }
+
+      local completed = false
+      local success = false
+
+      sync.execute(1, plan, function(ok)
+        completed = true
+        success = ok
+      end)
+
+      vim.wait(1000, function()
+        return completed
+      end)
+
+      assert.is_false(success, 'Should fail')
+
+      -- Cache should NOT be updated on failure
+      assert.are.equal(0, #mock_cache_pages.save_content_calls, 'Should NOT call save_content on failure')
+      assert.are.equal(0, #mock_sync_state.update_after_push_calls, 'Should NOT call update_after_push on failure')
+    end)
+
+    it('should skip cache update when cache is not initialized', function()
+      -- Make cache report as not initialized
+      mock_cache.is_initialized = function()
+        return false
+      end
+
+      local block = create_mock_block({
+        id = 'existing-block-id-000000000000000',
+        is_new = false,
+        temp_id = nil,
+        text = 'Updated text',
+      })
+
+      local plan = create_mock_plan({
+        updates = {
+          {
+            block = block,
+            block_id = 'existing-block-id-000000000000000',
+            content = 'Updated text',
+          },
+        },
+      })
+
+      local completed = false
+      local success = false
+
+      sync.execute(1, plan, function(ok)
+        completed = true
+        success = ok
+      end)
+
+      vim.wait(1000, function()
+        return completed
+      end)
+
+      assert.is_true(success, 'Should succeed')
+
+      -- Cache should NOT be updated when not initialized
+      assert.are.equal(
+        0,
+        #mock_cache_pages.save_content_calls,
+        'Should NOT call save_content when cache not initialized'
+      )
+    end)
+  end)
 end)

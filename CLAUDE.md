@@ -57,7 +57,7 @@ lua/neotion/
 
 | Bug | Priority | Status | Description |
 |-----|----------|--------|-------------|
-| 11.1 | CRITICAL | TODO | Cache sync sonrası güncellenmiyor |
+| 11.1 | CRITICAL | ✅ Done | Cache sync sonrası güncellenmiyor |
 | 11.2 | CRITICAL | TODO | Enter orphan line'da soft break yapıyor |
 | 11.3 | HIGH | TODO | List item virtual line pozisyon hatası |
 
@@ -77,9 +77,9 @@ Complete editing experience overhaul:
 | 10.9 | Done | Enter/Shift+Enter editing model |
 | 10.10 | Done | Continuation markers (multi-line block `│` indicator) |
 
-**Recent Work (2026-01-09)**: Phase 11 başladı. Editing experience'da 3 kritik bug tespit edildi: (1) Cache sync sonrası güncellenmiyor, (2) Enter orphan line'da soft break yapıyor, (3) List item virtual line pozisyon hatası.
+**Recent Work (2026-01-09)**: Bug 11.1 (cache sync) çözüldü. Push success callback'ine cache update eklendi, 3 yeni test yazıldı.
 
-**Current Plan**: `~/.claude/plans/quizzical-stargazing-ember.md` (Phase 11 bug fixes added)
+**Next**: Bug 11.2 (Enter orphan soft break) veya Bug 11.3 (list item virtual line)
 
 Detaylar: `TODO.md`
 

@@ -60,6 +60,133 @@ Editing deneyimi refactor tamamlandi (2026-01-09).
   - Integration testler `feedkeys` kullanabilir
   - Manual testing daha guvenilir suanlik
 
+---
+
+## Phase 11: Editing Experience Bug Fixes
+
+Editing experience'da tespit edilen kritik buglar. **Öncelikli** olarak çözülmeli.
+
+### Bug 11.1: Sync Sonrası Cache Güncellenmiyor (CRITICAL)
+
+**Durum**: Sync sonrası local cache eski kalıyor, plugin'i kapatıp açınca eski cache'den okuyor.
+
+**Senaryo**:
+1. Sayfa aç → cache'den yüklenir
+2. Değişiklik yap → sync et → Notion'a gider ✅
+3. Plugin'i kapat/aç → **eski cache'den yüklenir** ❌
+4. Background refresh → sonunda güncellenir
+
+**Beklenen**: Sync başarılı olduktan sonra local cache de güncel olmalı.
+
+**Root Cause Analizi**:
+- Push işlemi API'ye gönderiyor ama cache güncellenmedi
+- `cache.pages` sadece pull sırasında güncelleniyor
+- Log'da görülen: `Page content cache hit` → eski veri
+
+**Çözüm**:
+- `sync.lua` success callback'inde cache update çağır
+- Hem `pages` cache'i (content) hem `query_cache` (search list) güncellenmeli
+- API response'unu cache'e yaz
+
+**Etkilenen Dosyalar**:
+- `lua/neotion/sync.lua` - success callback
+- `lua/neotion/cache/pages.lua` - cache update logic
+- `lua/neotion/cache/query_cache.lua` - search list invalidation
+
+---
+
+### Bug 11.2: Enter Orphan Line'da Soft Break Yapıyor (CRITICAL)
+
+**Durum**: Orphan line (yeni oluşturulan, henüz sync edilmemiş satır) üzerinde `<CR>` yapınca yeni block açmıyor, sadece newline ekliyor (soft break gibi davranıyor).
+
+**Senaryo**:
+1. `test paragraph` üzerinde `o` bas → yeni satır aç (orphan)
+2. `between paragraph` yaz
+3. `<CR>` bas → **aynı satırda devam ediyor** ❌
+4. `between paragraph 2` yaz
+5. Sync et → **tek block olarak gidiyor** (2 satırlık paragraph)
+
+**Beklenen**: `<CR>` yeni bir paragraph block başlatmalı.
+
+**Root Cause Analizi**:
+- `input/editing.lua` → `handle_enter()` block lookup yapıyor
+- Orphan line için `mapping.get_block_at_line()` → `nil` dönüyor
+- Block bulunamayınca fallback: `vim.api.nvim_feedkeys('\n', 'n', false)`
+- Bu da soft break (Notion paragraph multi-line)
+
+**Log'dan**:
+```
+[mapping] detect_orphan_lines complete | {"orphan_count":1}
+[model.blocks.factory] Created new block from orphan lines | {"content_preview":"between paragraph\nbetween para"...}
+```
+→ İki satır tek block olarak gitti
+
+**Çözüm**:
+- Orphan line'da Enter → orphan'ı split et
+- İlk kısım: mevcut orphan block olarak sync edilecek
+- İkinci kısım: yeni orphan line
+- Alternatif: Orphan'ı hemen sync et, sonra normal Enter davranışı
+
+**Etkilenen Dosyalar**:
+- `lua/neotion/input/editing.lua` - orphan handling
+- `lua/neotion/model/mapping.lua` - orphan split helper
+
+---
+
+### Bug 11.3: List Item Virtual Line Pozisyon Hatası (VISUAL)
+
+**Durum**: List item eklendiğinde virtual line (block spacing) yanlış pozisyonda kalıyor.
+
+**Senaryo**:
+1. List item'da Enter → yeni list item oluşuyor ✅
+2. Notion'a sync → doğru gidiyor ✅
+3. **Görsel**: Virtual line, yeni list item'ın altında değil, arasında kalıyor ❌
+
+**Görüntü**:
+```
+• - test item
+        ← virtual line (yanlış pozisyon)
+  - asagiya indik
+  - bir daha indik
+```
+
+**Beklenen**:
+```
+• - test item
+  - asagiya indik
+  - bir daha indik
+        ← virtual line (list grubu sonu)
+```
+
+**Root Cause Analizi**:
+- List item'lar `spacing_after() → 0` döner (grouped)
+- Yeni list item eklendikten sonra `refresh()` çağrılıyor
+- Ama extmark pozisyonları henüz güncellenmemiş olabilir
+- Virtual line eski pozisyonda kalıyor
+
+**Çözüm**:
+- `apply_block_spacing()` → list group detection logic'i kontrol et
+- Yeni block eklendikten sonra tam refresh gerekebilir
+- Extmark rebuild sonrası virtual lines yeniden hesaplanmalı
+
+**Etkilenen Dosyalar**:
+- `lua/neotion/render/init.lua` - `apply_block_spacing()`
+- `lua/neotion/model/mapping.lua` - `rebuild_extmarks()`
+
+---
+
+### Implementation Order
+
+| Bug | Priority | Complexity | Description |
+|-----|----------|------------|-------------|
+| 11.1 | CRITICAL | Medium | Cache sync - data loss riski |
+| 11.2 | CRITICAL | Medium | Enter behavior - UX broken |
+| 11.3 | HIGH | Low | Virtual line visual glitch |
+
+**Önerilen Sıra**: 11.1 → 11.2 → 11.3
+
+---
+
 ## Ideas
 
 - [ ] **`:edit` ile Discard Changes**: Normal neovim buffer'i gibi "discard unsaved changes" davranisi
@@ -67,12 +194,6 @@ Editing deneyimi refactor tamamlandi (2026-01-09).
   - API'den gelen response ile buffer'i guncelle (notu yeni acmis gibi)
   - Kaydedilmemis degisiklikleri at, cache'in ilk haline don
   - UX: Kullanici buffer'da degisiklik yapti ama vazgecti → `:e` ile temize don
-
-- [ ] **Sync Sonrasi Cache Guncellemesi**: Basarili sync sonrasi local cache eski kaliyor
-  - Push/sync basarili → local cache'i de guncelle
-  - Suan: API'ye gonderiyoruz ama cache hala eski content tutuyor
-  - Risk: Sonraki `:edit` veya pull eski cache'den okuyor
-  - Fix: Sync success callback'inde cache update cagirilmali
 
 - [ ] `[[` Link Completion (Phase 9.4)
 - [ ] `@` Mention completion (page/date) (Phase 9.5)

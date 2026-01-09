@@ -51,6 +51,17 @@ lua/neotion/
 | 9.4: `[[` Link Completion | TODO |
 | 9.5: `@` Mention | TODO |
 | 10: Editing Experience Refactor | Done |
+| 11: Editing Bug Fixes | **In Progress** |
+
+### Phase 11: Editing Bug Fixes (Current)
+
+| Bug | Priority | Status | Description |
+|-----|----------|--------|-------------|
+| 11.1 | CRITICAL | TODO | Cache sync sonrası güncellenmiyor |
+| 11.2 | CRITICAL | TODO | Enter orphan line'da soft break yapıyor |
+| 11.3 | HIGH | TODO | List item virtual line pozisyon hatası |
+
+Detaylar: `TODO.md` → Phase 11
 
 ### Phase 10: Editing Experience
 
@@ -66,9 +77,9 @@ Complete editing experience overhaul:
 | 10.9 | Done | Enter/Shift+Enter editing model |
 | 10.10 | Done | Continuation markers (multi-line block `│` indicator) |
 
-**Recent Work (2026-01-09)**: Phase 10 completed. Continuation markers were implemented as part of Phase 10.8 (gutter icons). Multi-line blocks show `│` on subsequent lines with `NeotionGutterContinuation` highlight group.
+**Recent Work (2026-01-09)**: Phase 11 başladı. Editing experience'da 3 kritik bug tespit edildi: (1) Cache sync sonrası güncellenmiyor, (2) Enter orphan line'da soft break yapıyor, (3) List item virtual line pozisyon hatası.
 
-**Current Plan**: `~/.claude/plans/quizzical-stargazing-ember.md`
+**Current Plan**: `~/.claude/plans/quizzical-stargazing-ember.md` (Phase 11 bug fixes added)
 
 Detaylar: `TODO.md`
 

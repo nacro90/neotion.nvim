@@ -2,17 +2,19 @@
 
 Random fikirler ve yapilacaklar.
 
-## Phase 10: Editing Experience
+## Phase 10: Editing Experience ✅ COMPLETED
 
-Editing deneyimini iyilestirmek icin tam bir refactor planliyoruz.
+Editing deneyimi refactor tamamlandi (2026-01-09).
 
-**Latest Progress (2026-01-08)**:
+**Completed Sub-phases**:
+- ✅ Phase 10.1-10.5: Block fixes, orphan handling, type detection
 - ✅ Phase 10.6: Virtual lines for block spacing (commit: 8740bbf)
 - ✅ Phase 10.7: Empty paragraph spacing optimization (commit: fb499e2)
 - ✅ Phase 10.7.1: Empty line sync to Notion (creates empty paragraphs)
-- ⏸️ Phase 10.7.2: Live virtual line positioning for o/O (low priority)
-- ⏸️ Phase 10.8: Gutter icons
-- ⏸️ Phase 10.9: Enter/Shift+Enter editing model
+- ⏸️ Phase 10.7.2: Live virtual line positioning for o/O (low priority, optional)
+- ✅ Phase 10.8: Gutter icons (configurable, default: off) (commit: 198edb8)
+- ✅ Phase 10.9: Enter/Shift+Enter editing model (commit: d1318bc)
+- ✅ Phase 10.10: Continuation markers (part of Phase 10.8)
 
 ### Block Management Issues
 
@@ -93,10 +95,9 @@ Editing deneyimini iyilestirmek icin tam bir refactor planliyoruz.
   - Workaround: `<esc>` basınca düzeliyor ✅
   - Priority: LOW (Phase 10.7.2 veya Phase 10.9'da düzelecek)
 
-- [ ] **Shift+Enter creates new block instead of soft break**: Paragraph içinde Shift+Enter yapınca yeni block açıyor
-  - Beklenen: Aynı block içinde yeni satır (multiline paragraph)
-  - Gerçekleşen: Yeni paragraph block oluşturuyor
-  - Phase 10.9'da fix edilecek (Enter/Shift+Enter editing model)
+- [x] **Shift+Enter creates new block instead of soft break**: ✅ FIXED (Phase 10.9)
+  - Shift+Enter now does soft break (same block, newline)
+  - Enter behavior is block-type aware (list continues, quote/code soft break)
 
 - [x] **Code block detected as paragraph**: Code fence içeren content paragraph olarak algılanıyor ✅ FIXED (commit: a647eea)
   - Added code fence pattern (` ``` `) to detection.lua
@@ -104,7 +105,7 @@ Editing deneyimini iyilestirmek icin tam bir refactor planliyoruz.
 
 - [ ] Block links (`notion://block/id`) desteklenmiyor
 - [ ] Nested list items
-- [ ] Auto-continuation (Enter after list item → new list item)
+- [x] Auto-continuation (Enter after list item → new list item) ✅ FIXED (Phase 10.9)
 - [ ] Extmark + `nvim_buf_set_lines` interaction issues (testler pending)
 - [ ] **Color tags not syncing to Notion**: `<c:red>text</c>` buffer formatı Notion'a gönderilirken rich_text color annotation'a dönüştürülmüyor
   - Buffer → Notion serialize işlemi color tag'leri parse etmeli

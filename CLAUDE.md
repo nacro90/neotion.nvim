@@ -50,7 +50,7 @@ lua/neotion/
 | 9.0-9.3: `/` Slash Commands (blocks, colors) | Done |
 | 9.4: `[[` Link Completion | TODO |
 | 9.5: `@` Mention | TODO |
-| 10: Editing Experience Refactor | In Progress |
+| 10: Editing Experience Refactor | Done |
 
 ### Phase 10: Editing Experience
 
@@ -64,9 +64,9 @@ Complete editing experience overhaul:
 | 10.7 | Done | Empty paragraph spacing optimization |
 | 10.8 | Done | Gutter icons (configurable, default: off) |
 | 10.9 | Done | Enter/Shift+Enter editing model |
-| 10.10 | **Next** | Continuation markers |
+| 10.10 | Done | Continuation markers (multi-line block `│` indicator) |
 
-**Recent Work (2026-01-08)**: Implemented Enter/Shift+Enter editing model (Phase 10.9). Block-aware Enter: list items continue with prefix (empty exits to paragraph), quote/code do soft break. Shift+Enter always soft break. o/O standard Vim. `input/editing.lua` module. 28 unit tests. Config: auto-enabled on neotion buffers.
+**Recent Work (2026-01-09)**: Phase 10 completed. Continuation markers were implemented as part of Phase 10.8 (gutter icons). Multi-line blocks show `│` on subsequent lines with `NeotionGutterContinuation` highlight group.
 
 **Current Plan**: `~/.claude/plans/quizzical-stargazing-ember.md`
 

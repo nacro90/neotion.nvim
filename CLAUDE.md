@@ -63,10 +63,10 @@ Complete editing experience overhaul:
 | 10.6.1 | Done | Code block detection bug fix (2026-01-08) |
 | 10.7 | Done | Empty paragraph spacing optimization |
 | 10.8 | Done | Gutter icons (configurable, default: off) |
-| 10.9 | **Next** | Enter/Shift+Enter editing model |
-| 10.10 | TODO | Continuation markers |
+| 10.9 | Done | Enter/Shift+Enter editing model |
+| 10.10 | **Next** | Continuation markers |
 
-**Recent Work (2026-01-08)**: Implemented gutter icons (Phase 10.8). Sign column shows block type indicators: H1/H2/H3 for headings, `•` for bullets, `#` for numbered lists, `│` for quotes, `<>` for code, `──` for dividers. Multi-line blocks show `│` continuation marker. Treesitter-linked highlights. 31 unit tests. Config: `render.gutter_icons = true`.
+**Recent Work (2026-01-08)**: Implemented Enter/Shift+Enter editing model (Phase 10.9). Block-aware Enter: list items continue with prefix (empty exits to paragraph), quote/code do soft break. Shift+Enter always soft break. o/O standard Vim. `input/editing.lua` module. 28 unit tests. Config: auto-enabled on neotion buffers.
 
 **Current Plan**: `~/.claude/plans/quizzical-stargazing-ember.md`
 

@@ -138,6 +138,10 @@ function M.set_content(bufnr, lines)
   -- Setup protection for read-only blocks (after render sets up extmarks)
   local protection = require('neotion.buffer.protection')
   protection.setup(bufnr)
+
+  -- Setup editing keymaps (Enter/Shift+Enter behavior)
+  local editing = require('neotion.input.editing')
+  editing.setup(bufnr)
 end
 
 ---Check if buffer is a neotion buffer

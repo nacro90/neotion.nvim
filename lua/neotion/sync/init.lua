@@ -596,17 +596,35 @@ function M.pull(bufnr, callback)
         return
       end
 
-      -- Cache blocks and update sync state
+      -- Calculate new content hash
+      local content_hash = cache.hash.page_content(blocks_result.blocks)
+
+      -- Check if remote content actually changed (optimization: skip re-render if same)
+      local content_changed = true
       if cache.is_initialized() then
+        local sync_state = require('neotion.cache.sync_state')
+        local current_state = sync_state.get_state(page_id)
+        -- Compare against remote_hash (previous remote state), not local_hash (local edits)
+        if current_state and current_state.remote_hash == content_hash then
+          content_changed = false
+          log.debug('Pull: remote content unchanged, skipping re-render', { page_id = page_id })
+        end
+
+        -- Cache blocks and update sync state
         local cache_pages = require('neotion.cache.pages')
         cache_pages.save_content(page_id, blocks_result.blocks)
-
-        local sync_state = require('neotion.cache.sync_state')
-        local content_hash = cache.hash.page_content(blocks_result.blocks)
         sync_state.update_after_pull(page_id, content_hash)
       end
 
-      -- Display content (force update)
+      -- Skip re-render if content unchanged
+      if not content_changed then
+        buffer.set_status(bufnr, 'ready')
+        vim.notify('[neotion] Already up to date', vim.log.levels.INFO)
+        callback(true, 'Already up to date')
+        return
+      end
+
+      -- Display content (content changed, full update required)
       vim.schedule(function()
         if vim.api.nvim_buf_is_valid(bufnr) then
           log.debug('Pull: starting buffer update', { bufnr = bufnr })

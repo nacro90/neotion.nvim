@@ -2,6 +2,39 @@
 
 Neovim'de Notion entegrasyonu - **zero data loss** prensibiyle.
 
+## TODO System
+
+**Kod = Source of Truth**. Tüm aktif TODO'lar ilgili dosyalarda inline olarak bulunur.
+
+### Format
+
+```lua
+-- TODO(neotion:ID:PRIORITY): Kısa açıklama
+-- Detay satırları (opsiyonel)
+```
+
+**Priority:** `CRITICAL` > `HIGH` > `MEDIUM` > `LOW`
+
+**ID örnekleri:** `11.3` (bug), `FEAT-9.4` (feature), `REFACTOR-X`
+
+### Komutlar
+
+```bash
+# Tüm TODO'ları listele
+grep -rn "TODO(neotion:" --include="*.lua" lua/
+
+# Sıradaki TODO (en yüksek priority)
+/todos next
+```
+
+### Nereye Bakılır
+
+| Bilgi | Konum |
+|-------|-------|
+| Aktif TODO'lar | `grep "TODO(neotion:"` |
+| Architectural decisions | Serena memories |
+| Geçmiş fazlar | Git history |
+
 ## Quick Reference
 
 ```bash
@@ -45,20 +78,16 @@ lua/neotion/
 
 ## Current Status
 
-| Phase | Status |
-|-------|--------|
-| 1-10 | ✅ Done |
-| **11: Bug Fixes** | **Active** |
+**Phase 1-10:** Done | **Phase 11:** Active (Bug Fixes)
 
-### Phase 11 Bugs
+Aktif TODO'lar için: `grep -rn "TODO(neotion:" lua/`
 
-| Bug | Status | Description |
-|-----|--------|-------------|
-| 11.1 | ✅ Done | Cache sync |
-| 11.2 | TODO | Enter orphan soft break |
-| 11.3 | TODO | List virtual line |
+### Roadmap
 
-**Detaylar**: `TODO.md`
+- `FEAT-9.4` - Link completion `[[`
+- `FEAT-9.5` - Mention completion `@`
+- Tier 1: to_do block
+- Tier 2: callout, toggle, bookmark (editable)
 
 ## Syntax
 
@@ -100,5 +129,3 @@ Buffer ←→ Model ←→ Sync ←→ API
 - `sync-cache-flow` - Sync/cache akislari
 - `project-structure` - Proje yapisi
 - `phase10-gutter-icons` - Gutter icons
-
-**Full Documentation**: `TODO.md`

@@ -179,6 +179,68 @@ function M.handle_shift_enter(_bufnr)
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<CR>', true, false, true), 'n', false)
 end
 
+---Handle 'o' in normal mode (open line below)
+---If on a list item, prefixes new line with list marker
+---@param bufnr integer
+function M.handle_o(bufnr)
+  local block = get_current_block(bufnr)
+  local line_content = get_current_line()
+
+  -- Determine block type
+  local block_type
+  if block then
+    block_type = block:get_type()
+  else
+    block_type = detect_list_type_from_content(line_content)
+  end
+
+  -- List items: add prefix to new line
+  if block_type == 'bulleted_list_item' or block_type == 'numbered_list_item' then
+    local prefix = get_list_prefix(block_type, line_content)
+    if prefix then
+      local row = vim.api.nvim_win_get_cursor(0)[1]
+      vim.api.nvim_buf_set_lines(bufnr, row, row, false, { prefix })
+      vim.api.nvim_win_set_cursor(0, { row + 1, #prefix })
+      vim.cmd('startinsert!')
+      return
+    end
+  end
+
+  -- Default: standard 'o' behavior
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('o', true, false, true), 'n', false)
+end
+
+---Handle 'O' in normal mode (open line above)
+---If on a list item, prefixes new line with list marker
+---@param bufnr integer
+function M.handle_O(bufnr)
+  local block = get_current_block(bufnr)
+  local line_content = get_current_line()
+
+  -- Determine block type
+  local block_type
+  if block then
+    block_type = block:get_type()
+  else
+    block_type = detect_list_type_from_content(line_content)
+  end
+
+  -- List items: add prefix to new line above
+  if block_type == 'bulleted_list_item' or block_type == 'numbered_list_item' then
+    local prefix = get_list_prefix(block_type, line_content)
+    if prefix then
+      local row = vim.api.nvim_win_get_cursor(0)[1]
+      vim.api.nvim_buf_set_lines(bufnr, row - 1, row - 1, false, { prefix })
+      vim.api.nvim_win_set_cursor(0, { row, #prefix })
+      vim.cmd('startinsert!')
+      return
+    end
+  end
+
+  -- Default: standard 'O' behavior
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('O', true, false, true), 'n', false)
+end
+
 ---Check if buffer has editing attached
 ---@param bufnr integer
 ---@return boolean
@@ -218,6 +280,22 @@ function M.setup(bufnr, opts)
     desc = 'Neotion: Soft break (same block)',
   })
 
+  -- Normal mode: o -> open line below with list prefix
+  vim.keymap.set('n', 'o', function()
+    M.handle_o(bufnr)
+  end, {
+    buffer = bufnr,
+    desc = 'Neotion: Open line below (list-aware)',
+  })
+
+  -- Normal mode: O -> open line above with list prefix
+  vim.keymap.set('n', 'O', function()
+    M.handle_O(bufnr)
+  end, {
+    buffer = bufnr,
+    desc = 'Neotion: Open line above (list-aware)',
+  })
+
   attached_buffers[bufnr] = true
 
   -- Clean up on buffer delete
@@ -240,6 +318,8 @@ function M.detach(bufnr)
   -- Remove keymaps
   pcall(vim.keymap.del, 'i', '<CR>', { buffer = bufnr })
   pcall(vim.keymap.del, 'i', '<S-CR>', { buffer = bufnr })
+  pcall(vim.keymap.del, 'n', 'o', { buffer = bufnr })
+  pcall(vim.keymap.del, 'n', 'O', { buffer = bufnr })
 
   attached_buffers[bufnr] = nil
 end

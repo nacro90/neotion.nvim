@@ -34,6 +34,10 @@ local attached_buffers = {}
 ---@type table<integer, integer?>
 local debounce_timers = {}
 
+--- Last known line count per buffer (for detecting line additions in insert mode)
+---@type table<integer, integer>
+local last_line_counts = {}
+
 --- Global enabled state
 local enabled = true
 
@@ -250,6 +254,7 @@ end
 ---@param bufnr integer
 function M.apply_block_spacing(bufnr)
   local mapping = require('neotion.model.mapping')
+  local detection = require('neotion.model.blocks.detection')
   local blocks = mapping.get_blocks(bufnr)
 
   -- Detect orphan lines once (for empty orphan lookahead)
@@ -258,18 +263,40 @@ function M.apply_block_spacing(bufnr)
   local header_lines = buf_data and buf_data.header_line_count or 6
   local orphans = mapping.detect_orphan_lines(bufnr, header_lines)
 
-  -- Pre-fetch orphan content to avoid repeated buffer reads
+  -- Pre-fetch orphan info: empty status and detected block type
   local orphan_is_empty = {}
+  local orphan_types = {} -- Maps orphan.start_line to detected block type
   for _, orphan in ipairs(orphans) do
     local orphan_lines = vim.api.nvim_buf_get_lines(bufnr, orphan.start_line - 1, orphan.end_line, false)
     local all_empty = true
+    local first_content_line = nil
     for _, line in ipairs(orphan_lines) do
       if vim.trim(line) ~= '' then
         all_empty = false
-        break
+        first_content_line = first_content_line or line
       end
     end
     orphan_is_empty[orphan.start_line] = all_empty
+    -- Detect block type from first non-empty line
+    if first_content_line then
+      local detected_type = detection.detect_type(first_content_line)
+      orphan_types[orphan.start_line] = detected_type or 'paragraph'
+    else
+      orphan_types[orphan.start_line] = 'paragraph'
+    end
+  end
+
+  -- Helper: check if a type is a list item
+  local function is_list_type(block_type)
+    return block_type == 'bulleted_list_item' or block_type == 'numbered_list_item'
+  end
+
+  -- Helper: get spacing_before for orphan block type
+  local function orphan_spacing_before(block_type)
+    if block_type == 'heading_1' then
+      return 1
+    end
+    return 0
   end
 
   -- Apply spacing after each block
@@ -282,33 +309,51 @@ function M.apply_block_spacing(bufnr)
     local next_block = blocks[i + 1]
     local spacing = block:spacing_after()
 
+    -- Check for orphan immediately after this block
+    local orphan_after = nil
+    local orphan_type_after = nil
+    for _, orphan in ipairs(orphans) do
+      if orphan.start_line == end_line + 1 then
+        orphan_after = orphan
+        orphan_type_after = orphan_types[orphan.start_line]
+        break
+      end
+    end
+
     -- Priority 1: Empty paragraph/orphan lookahead (always takes precedence)
-    -- These should show minimal spacing for clean visual separation
     local has_empty_after = false
     if next_block and next_block:is_empty_paragraph() then
       spacing = 0
       has_empty_after = true
-    elseif #orphans > 0 then
-      -- Check if there's an empty orphan immediately after this block
-      local expected_next_line = end_line + 1
-      if orphan_is_empty[expected_next_line] then
-        spacing = 0
-        has_empty_after = true
-      end
+    elseif orphan_after and orphan_is_empty[orphan_after.start_line] then
+      spacing = 0
+      has_empty_after = true
     end
 
     -- Priority 2: List group logic (only if not overridden by empty lookahead)
     if not has_empty_after and block:is_list_item() then
-      if not next_block or not next_block:is_list_item() then
+      -- Check if next is a list item (either block or orphan)
+      local next_is_list = (next_block and next_block:is_list_item())
+        or (orphan_type_after and is_list_type(orphan_type_after))
+      if not next_is_list then
         spacing = 1 -- End of list group
+      else
+        spacing = 0 -- Continue list group
       end
     end
 
-    -- Priority 3: Add spacing_before from next block (additive, but only if spacing > 0)
-    if next_block and spacing > 0 then
-      local extra_before = next_block:spacing_before()
-      if extra_before > 0 then
-        spacing = spacing + extra_before
+    -- Priority 3: Add spacing_before from next block/orphan (additive, but only if spacing > 0)
+    if spacing > 0 then
+      if next_block then
+        local extra_before = next_block:spacing_before()
+        if extra_before > 0 then
+          spacing = spacing + extra_before
+        end
+      elseif orphan_type_after then
+        local extra_before = orphan_spacing_before(orphan_type_after)
+        if extra_before > 0 then
+          spacing = spacing + extra_before
+        end
       end
     end
 
@@ -320,10 +365,54 @@ function M.apply_block_spacing(bufnr)
     ::continue::
   end
 
-  -- Apply spacing after orphan lines (new content not yet synced)
-  for _, orphan in ipairs(orphans) do
-    -- Add virtual line after orphan region end (0-indexed)
-    extmarks.apply_virtual_lines(bufnr, orphan.end_line - 1, 1)
+  -- Apply spacing after orphan lines based on detected block type
+  for idx, orphan in ipairs(orphans) do
+    local orphan_type = orphan_types[orphan.start_line]
+
+    -- Determine what comes after this orphan
+    local next_orphan = orphans[idx + 1]
+    local next_orphan_type = next_orphan and orphan_types[next_orphan.start_line]
+
+    -- Find next block after this orphan
+    local next_block_after_orphan = nil
+    for _, block in ipairs(blocks) do
+      local start_line = block:get_line_range()
+      if start_line and start_line > orphan.end_line then
+        next_block_after_orphan = block
+        break
+      end
+    end
+
+    -- Calculate spacing based on block type rules
+    local spacing = 1 -- Default spacing
+
+    -- List item grouping: no spacing if next is also a list item
+    if is_list_type(orphan_type) then
+      local next_is_list = (next_orphan_type and is_list_type(next_orphan_type))
+        or (next_block_after_orphan and next_block_after_orphan:is_list_item())
+      if next_is_list then
+        spacing = 0
+      end
+    end
+
+    -- Empty orphan: no spacing before next
+    if orphan_is_empty[orphan.start_line] then
+      spacing = 0
+    end
+
+    -- Add spacing_before from next element
+    if spacing > 0 then
+      if next_orphan_type then
+        spacing = spacing + orphan_spacing_before(next_orphan_type)
+      elseif next_block_after_orphan then
+        spacing = spacing + next_block_after_orphan:spacing_before()
+      end
+    end
+
+    -- Apply virtual lines at orphan end (0-indexed)
+    if spacing > 0 then
+      extmarks.apply_virtual_lines(bufnr, orphan.end_line - 1, spacing)
+    end
   end
 end
 
@@ -395,6 +484,9 @@ function M.attach(bufnr)
 
   attached_buffers[bufnr] = true
 
+  -- Initialize line count tracking for insert mode virtual lines refresh
+  last_line_counts[bufnr] = vim.api.nvim_buf_line_count(bufnr)
+
   -- Setup global autocmds (once)
   setup_win_resized_autocmd()
 
@@ -441,7 +533,18 @@ function M.attach(bufnr)
     group = augroup,
     buffer = bufnr,
     callback = function()
-      -- Only re-render current line in insert mode for performance
+      local current_line_count = vim.api.nvim_buf_line_count(bufnr)
+      local last_count = last_line_counts[bufnr] or current_line_count
+
+      -- Check if line count changed (new line added or removed)
+      if current_line_count ~= last_count then
+        last_line_counts[bufnr] = current_line_count
+        -- Line count changed - refresh virtual lines and spacing
+        extmarks.clear_virtual_lines(bufnr)
+        M.apply_block_spacing(bufnr)
+      end
+
+      -- Always re-render current line in insert mode for inline formatting
       local cursor = vim.api.nvim_win_get_cursor(0)
       M.render_line(bufnr, cursor[1] - 1)
     end,
@@ -476,6 +579,9 @@ function M.detach(bufnr)
   -- Cancel pending debounce timer
   stop_timer(debounce_timers[bufnr])
   debounce_timers[bufnr] = nil
+
+  -- Clear line count tracking
+  last_line_counts[bufnr] = nil
 
   -- Clear extmarks (all namespaces)
   extmarks.clear_buffer(bufnr)

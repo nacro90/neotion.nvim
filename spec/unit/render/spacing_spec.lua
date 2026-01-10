@@ -688,17 +688,16 @@ describe('neotion.render spacing', function()
       end
       assert.is_false(found_block1, 'Block before empty orphan should have NO spacing')
 
-      -- orphan line should have spacing = 1
+      -- Empty orphan should have NO spacing (we don't know what block type it will become)
       local found_orphan = false
       for _, call in ipairs(extmark_calls) do
         if call.type == 'virtual_lines' and call.line == 1 then
           found_orphan = true
-          assert.equals(1, call.count)
         end
       end
-      assert.is_true(found_orphan, 'Empty orphan should have spacing after')
+      assert.is_false(found_orphan, 'Empty orphan should have NO spacing')
 
-      -- block2 should have spacing = 1 (normal spacing)
+      -- block2 should have spacing = 1 (normal spacing after empty orphan)
       local found_block2 = false
       for _, call in ipairs(extmark_calls) do
         if call.type == 'virtual_lines' and call.line == 2 then

@@ -453,10 +453,19 @@ function M.add_block(bufnr, block, start_line, end_line, after_block_id)
     after_block_id = after_block_id,
   })
 
-  -- Recreate extmarks for all blocks (simplest approach for now)
-  -- This ensures proper extmark ordering after insertion
+  -- Recreate extmarks and re-render visual elements
+  -- This ensures proper extmark ordering and virtual lines positioning after insertion
   if vim.api.nvim_buf_is_valid(bufnr) then
     M.rebuild_extmarks(bufnr)
+
+    -- Re-apply virtual lines and gutter icons (Bug 11.3 fix)
+    -- rebuild_extmarks only handles block extmarks, not visual elements
+    local extmarks = require('neotion.render.extmarks')
+    local render = require('neotion.render.init')
+    extmarks.clear_virtual_lines(bufnr)
+    extmarks.clear_gutter_icons(bufnr)
+    render.apply_block_spacing(bufnr)
+    render.apply_gutter_icons(bufnr)
   end
 end
 

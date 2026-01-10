@@ -30,8 +30,20 @@ end
 function M.format_blocks(blocks, opts)
   opts = opts or {}
   local lines = {}
+  local numbered_list_counter = 0
 
   for _, block in ipairs(blocks) do
+    -- Track numbered list sequence
+    if block.type == 'numbered_list_item' then
+      numbered_list_counter = numbered_list_counter + 1
+      if block.set_number then
+        block:set_number(numbered_list_counter)
+      end
+    else
+      -- Reset counter when encountering non-numbered-list block
+      numbered_list_counter = 0
+    end
+
     local block_lines = block:format(opts)
     vim.list_extend(lines, block_lines)
   end

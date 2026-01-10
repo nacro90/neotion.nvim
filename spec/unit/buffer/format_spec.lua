@@ -262,5 +262,79 @@ describe('neotion.buffer.format', function()
 
       assert.are.equal(0, #lines)
     end)
+
+    it('should number consecutive numbered_list_items sequentially', function()
+      local page_blocks = {
+        {
+          type = 'numbered_list_item',
+          numbered_list_item = {
+            rich_text = { { plain_text = 'First' } },
+          },
+        },
+        {
+          type = 'numbered_list_item',
+          numbered_list_item = {
+            rich_text = { { plain_text = 'Second' } },
+          },
+        },
+        {
+          type = 'numbered_list_item',
+          numbered_list_item = {
+            rich_text = { { plain_text = 'Third' } },
+          },
+        },
+      }
+
+      local lines = format.format_blocks(page_blocks)
+
+      assert.are.equal(3, #lines)
+      assert.are.equal('1. First', lines[1])
+      assert.are.equal('2. Second', lines[2])
+      assert.are.equal('3. Third', lines[3])
+    end)
+
+    it('should restart numbering after non-list block', function()
+      local page_blocks = {
+        {
+          type = 'numbered_list_item',
+          numbered_list_item = {
+            rich_text = { { plain_text = 'First' } },
+          },
+        },
+        {
+          type = 'numbered_list_item',
+          numbered_list_item = {
+            rich_text = { { plain_text = 'Second' } },
+          },
+        },
+        {
+          type = 'paragraph',
+          paragraph = {
+            rich_text = { { plain_text = 'Break' } },
+          },
+        },
+        {
+          type = 'numbered_list_item',
+          numbered_list_item = {
+            rich_text = { { plain_text = 'New first' } },
+          },
+        },
+        {
+          type = 'numbered_list_item',
+          numbered_list_item = {
+            rich_text = { { plain_text = 'New second' } },
+          },
+        },
+      }
+
+      local lines = format.format_blocks(page_blocks)
+
+      assert.are.equal(5, #lines)
+      assert.are.equal('1. First', lines[1])
+      assert.are.equal('2. Second', lines[2])
+      assert.are.equal('Break', lines[3])
+      assert.are.equal('1. New first', lines[4])
+      assert.are.equal('2. New second', lines[5])
+    end)
   end)
 end)

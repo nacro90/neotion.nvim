@@ -45,7 +45,8 @@ function M.format_block(block, indent, opts)
   elseif block_type == 'bulleted_list_item' then
     table.insert(lines, prefix .. '- ' .. text)
   elseif block_type == 'numbered_list_item' then
-    table.insert(lines, prefix .. '1. ' .. text)
+    local number = block._number or 1
+    table.insert(lines, prefix .. tostring(number) .. '. ' .. text)
   elseif block_type == 'to_do' then
     local block_data = block[block_type]
     local checkbox = block_data and block_data.checked and '[x]' or '[ ]'
@@ -103,8 +104,18 @@ end
 ---@return string[]
 function M.format_blocks(page_blocks, opts)
   local lines = {}
+  local numbered_list_counter = 0
 
   for _, block in ipairs(page_blocks) do
+    -- Track numbered list sequence
+    if block.type == 'numbered_list_item' then
+      numbered_list_counter = numbered_list_counter + 1
+      block._number = numbered_list_counter
+    else
+      -- Reset counter when encountering non-numbered-list block
+      numbered_list_counter = 0
+    end
+
     local block_lines = M.format_block(block, 0, opts)
     vim.list_extend(lines, block_lines)
   end

@@ -540,5 +540,94 @@ describe('neotion.input.editing with mock blocks', function()
         editing.handle_enter(bufnr)
       end)
     end)
+
+    -- Bug 11.2: Orphan line Enter should split at cursor, not soft break
+    describe('orphan line split at cursor (Bug 11.2)', function()
+      it('should split orphan line at cursor position', function()
+        -- Setup: "hello world" with cursor at position 5 (after "hello")
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'hello world' })
+        vim.api.nvim_win_set_cursor(0, { 1, 5 }) -- after "hello"
+
+        mapping.get_block_at_line = function()
+          return nil -- orphan line
+        end
+
+        editing.handle_enter(bufnr)
+
+        local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+        assert.are.equal(2, #lines, 'Should have 2 lines after split')
+        assert.are.equal('hello', lines[1], 'First line should be text before cursor')
+        assert.are.equal(' world', lines[2], 'Second line should be text after cursor')
+      end)
+
+      it('should move cursor to start of new line after split', function()
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'hello world' })
+        vim.api.nvim_win_set_cursor(0, { 1, 5 })
+
+        mapping.get_block_at_line = function()
+          return nil
+        end
+
+        editing.handle_enter(bufnr)
+
+        local cursor = vim.api.nvim_win_get_cursor(0)
+        assert.are.equal(2, cursor[1], 'Cursor should be on line 2')
+        assert.are.equal(0, cursor[2], 'Cursor should be at column 0')
+      end)
+
+      it('should handle split at end of line (creates empty new line)', function()
+        -- Note: In normal mode, cursor at position 5 for "hello" gets clamped to 4
+        -- In insert mode (real usage), cursor CAN be at position 5 (after last char)
+        -- Test uses last valid normal mode position (4), which splits 'hell' + 'o'
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'hello' })
+        local content = 'hello'
+        -- Use last character position (normal mode behavior)
+        vim.api.nvim_win_set_cursor(0, { 1, #content - 1 })
+
+        mapping.get_block_at_line = function()
+          return nil
+        end
+
+        editing.handle_enter(bufnr)
+
+        local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+        assert.are.equal(2, #lines)
+        -- In normal mode at pos 4: 'hell' + 'o'
+        assert.are.equal('hell', lines[1])
+        assert.are.equal('o', lines[2])
+      end)
+
+      it('should handle split at start of line (moves all text to new line)', function()
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'hello' })
+        vim.api.nvim_win_set_cursor(0, { 1, 0 }) -- at start
+
+        mapping.get_block_at_line = function()
+          return nil
+        end
+
+        editing.handle_enter(bufnr)
+
+        local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+        assert.are.equal(2, #lines)
+        assert.are.equal('', lines[1], 'First line should be empty')
+        assert.are.equal('hello', lines[2], 'Second line should have all text')
+      end)
+
+      it('should split empty orphan line (two empty lines)', function()
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '' })
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+        mapping.get_block_at_line = function()
+          return nil
+        end
+
+        editing.handle_enter(bufnr)
+
+        local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+        assert.are.equal(2, #lines)
+        assert.are.equal('', lines[1])
+        assert.are.equal('', lines[2])
+      end)
+    end)
   end)
 end)

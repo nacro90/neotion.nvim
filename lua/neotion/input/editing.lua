@@ -87,6 +87,24 @@ local function detect_list_type_from_content(line_content)
   return nil
 end
 
+---Split orphan line at cursor position (Bug 11.2 fix)
+---Creates two separate lines instead of soft break
+---@param bufnr integer
+local function split_orphan_at_cursor(bufnr)
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local row = cursor[1]
+  local col = cursor[2]
+  local content = vim.api.nvim_buf_get_lines(bufnr, row - 1, row, false)[1] or ''
+
+  local before = content:sub(1, col)
+  local after = content:sub(col + 1)
+
+  -- Replace current line and insert new line
+  vim.api.nvim_buf_set_lines(bufnr, row - 1, row, false, { before, after })
+  -- Move cursor to start of new line
+  vim.api.nvim_win_set_cursor(0, { row + 1, 0 })
+end
+
 ---Handle Enter key in insert mode
 ---Block-aware behavior based on current block type
 ---@param bufnr integer
@@ -102,8 +120,8 @@ function M.handle_enter(bufnr)
     -- Orphan line: detect type from content
     block_type = detect_list_type_from_content(line_content)
     if not block_type then
-      -- Not a list, just standard newline
-      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<CR>', true, false, true), 'n', false)
+      -- Not a list: split orphan line at cursor (Bug 11.2)
+      split_orphan_at_cursor(bufnr)
       return
     end
   end

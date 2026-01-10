@@ -1,261 +1,294 @@
-# TODO
+# neotion.nvim - TODO & Development Notes
 
-Random fikirler ve yapilacaklar.
-
-## Phase 10: Editing Experience ✅ COMPLETED
-
-Editing deneyimi refactor tamamlandi (2026-01-09).
-
-**Completed Sub-phases**:
-- ✅ Phase 10.1-10.5: Block fixes, orphan handling, type detection
-- ✅ Phase 10.6: Virtual lines for block spacing (commit: 8740bbf)
-- ✅ Phase 10.7: Empty paragraph spacing optimization (commit: fb499e2)
-- ✅ Phase 10.7.1: Empty line sync to Notion (creates empty paragraphs)
-- ⏸️ Phase 10.7.2: Live virtual line positioning for o/O (low priority, optional)
-- ✅ Phase 10.8: Gutter icons (configurable, default: off) (commit: 198edb8)
-- ✅ Phase 10.9: Enter/Shift+Enter editing model (commit: d1318bc)
-- ✅ Phase 10.10: Continuation markers (part of Phase 10.8)
-
-### Block Management Issues
-
-- [ ] **Block Absorption Problem**: `o` ile yeni satir acildiginda, icerik sonraki blogun icine absorbe oluyor
-  - Root cause: Extmark gravity ayarlari
-  - `right_gravity = true` ile fix yapildi ama `nvim_buf_set_lines` ile testler bozuldu
-  - Gercek kullanici editing (InsertMode) farkli calisiyor
-
-- [x] **Orphan Lines**: Bloklara ait olmayan satirlar icin strateji belirlenmeli
-  - Yeni block olusturma ✓
-  - Block type detection ✓
-
-- [x] **Block Type Detection**: Satir icerigi blockin beklenen tipine uymuyor
-  - Bug #10.1: First non-empty line type detection ✓
-  - Bug #10.2: Orphan type boundary splitting ✓
-
-- [x] **Chained Block Creation**: Birden fazla yeni block zincirleme olusturulurken temp_id sorunu
-  - Bug #10.3: Sequential create execution with temp_id resolution ✓
-
-- [x] **New Block Model Integration**: Sync sonrasi yeni bloklar model'e eklenmiyordu
-  - Bug #10.4: `mapping.add_block()` ve `rebuild_extmarks()` eklendi ✓
-
-- [x] **Zero Blocks Orphan Detection**: Sayfa sifir block ile acildiginda icerik orphan olarak algilanmiyordu
-  - Bug #10.5: `detect_orphan_lines()` sifir block durumunu handle ediyor ✓
-
-- [x] **Batch Block Creation**: Birden fazla block olusturulurken her biri ayri API call yapiyordu
-  - Perf: Zincirleme block'lar tek `append` request'inde batch olarak gonderiliyor ✓
-  - 5 block = 5 request → 5 block = 1 request
-
-### New Block Creation
-
-- [x] `o` ile yeni satir → block tipi belirlenmeli (paragraph default)
-- [x] Type conversion: `- ` yazildi → bulleted_list_item'a donusum
-- [x] Type conversion: `1. ` yazildi → numbered_list_item'a donusum
-- [x] Type conversion: `# ` yazildi → heading'e donusum
-- [x] `---` → divider olusturma
-- [x] Sync API: `blocks_api.append()` ile Notion'a gonderim
-- [x] Positioned insert: `after_block_id` ile dogru pozisyona ekleme
-
-### Testing Strategy
-
-- [ ] `nvim_buf_set_lines` vs real editing farki
-  - Integration testler `feedkeys` kullanabilir
-  - Manual testing daha guvenilir suanlik
+Projenin tüm planlama, geliştirme notları ve yapılacaklar listesi.
 
 ---
 
-## Phase 11: Editing Experience Bug Fixes
+## Quick Status
 
-Editing experience'da tespit edilen kritik buglar. **Öncelikli** olarak çözülmeli.
-
-### Bug 11.1: Sync Sonrası Cache Güncellenmiyor ✅ FIXED
-
-**Çözüm** (2026-01-09):
-- `sync/init.lua` → `M.execute` success callback'ine cache update eklendi
-- `cache_pages.save_content()` ve `sync_state.update_after_push()` çağrılıyor
-- Pull flow ile aynı pattern kullanıldı
-- 3 yeni test eklendi: success, failure, uninitialized edge case
-
-**Değişiklikler**:
-- `lua/neotion/sync/init.lua:54-77` - cache update logic
-- `spec/unit/sync/init_spec.lua` - 3 new tests
+| Phase | Status | Description |
+|-------|--------|-------------|
+| 1-6 | ✅ Done | Foundation, Formatting, Navigation, Rate Limiting |
+| 7 | ✅ Done | SQLite Cache (pages, content, frecency) |
+| 8 | ✅ Done | Live Search + Query Cache |
+| 9.0-9.3 | ✅ Done | `/` Slash Commands (blocks, colors) |
+| 9.4 | TODO | `[[` Link Completion |
+| 9.5 | TODO | `@` Mention |
+| 10 | ✅ Done | Editing Experience Refactor |
+| **11** | **Active** | Editing Bug Fixes |
 
 ---
 
-### Bug 11.2: Enter Orphan Line'da Soft Break Yapıyor (CRITICAL)
+## Phase 11: Editing Bug Fixes (Active)
 
-**Durum**: Orphan line (yeni oluşturulan, henüz sync edilmemiş satır) üzerinde `<CR>` yapınca yeni block açmıyor, sadece newline ekliyor (soft break gibi davranıyor).
+### Status Table
 
-**Senaryo**:
-1. `test paragraph` üzerinde `o` bas → yeni satır aç (orphan)
-2. `between paragraph` yaz
-3. `<CR>` bas → **aynı satırda devam ediyor** ❌
-4. `between paragraph 2` yaz
-5. Sync et → **tek block olarak gidiyor** (2 satırlık paragraph)
+| Bug | Priority | Status | Description |
+|-----|----------|--------|-------------|
+| 11.1 | CRITICAL | ✅ Done | Cache sync sonrası güncellenmiyor |
+| 11.2 | CRITICAL | 🔄 WIP | Enter orphan line'da soft break yapıyor |
+| 11.3 | HIGH | TODO | List item virtual line pozisyon hatası |
 
-**Beklenen**: `<CR>` yeni bir paragraph block başlatmalı.
+**Sıra**: ~~11.1~~ → **11.2** → 11.3
 
-**Root Cause Analizi**:
-- `input/editing.lua` → `handle_enter()` block lookup yapıyor
-- Orphan line için `mapping.get_block_at_line()` → `nil` dönüyor
-- Block bulunamayınca fallback: `vim.api.nvim_feedkeys('\n', 'n', false)`
-- Bu da soft break (Notion paragraph multi-line)
+---
 
-**Log'dan**:
-```
-[mapping] detect_orphan_lines complete | {"orphan_count":1}
-[model.blocks.factory] Created new block from orphan lines | {"content_preview":"between paragraph\nbetween para"...}
-```
-→ İki satır tek block olarak gitti
+### Bug 11.1: Cache Sync ✅ FIXED
+
+**Commit**: `5f96daf` (2026-01-09)
+
+**Problem**: Push/sync sonrası local cache eski kalıyor.
 
 **Çözüm**:
-- Orphan line'da Enter → orphan'ı split et
-- İlk kısım: mevcut orphan block olarak sync edilecek
-- İkinci kısım: yeni orphan line
-- Alternatif: Orphan'ı hemen sync et, sonra normal Enter davranışı
+- `sync/init.lua` → `M.execute` success callback'ine cache update eklendi
+- `cache_pages.save_content()` ve `sync_state.update_after_push()` çağrılıyor
+- 3 test eklendi
 
-**Etkilenen Dosyalar**:
-- `lua/neotion/input/editing.lua` - orphan handling
-- `lua/neotion/model/mapping.lua` - orphan split helper
+**Bonus**: Pull optimization (`c912355`) - content aynıysa re-render atlanıyor.
 
 ---
 
-### Bug 11.3: List Item Virtual Line Pozisyon Hatası (VISUAL)
+### Bug 11.2: Enter Orphan Soft Break 🔄 WIP
 
-**Durum**: List item eklendiğinde virtual line (block spacing) yanlış pozisyonda kalıyor.
+**Problem**: Orphan line üzerinde `<CR>` yeni block açmıyor, soft break yapıyor.
 
 **Senaryo**:
-1. List item'da Enter → yeni list item oluşuyor ✅
-2. Notion'a sync → doğru gidiyor ✅
-3. **Görsel**: Virtual line, yeni list item'ın altında değil, arasında kalıyor ❌
+```
+1. "test paragraph" üzerinde `o` → orphan line aç
+2. "between paragraph" yaz
+3. <CR> bas → aynı satırda devam ❌
+4. "between paragraph 2" yaz
+5. Sync → tek block (2 satır) gidiyor
+```
+
+**Root Cause**:
+```lua
+-- input/editing.lua handle_enter()
+local block = mapping.get_block_at_line(bufnr, line)
+if not block then
+  -- Orphan line → fallback soft break
+  vim.api.nvim_feedkeys('\n', 'n', false)
+end
+```
+
+**Çözüm**:
+- `split_orphan_at_cursor()` helper fonksiyonu eklendi
+- `handle_enter()` içinde non-list orphan için bu fonksiyon çağrılıyor
+- 5 test eklendi (cursor positions, edge cases)
+
+**Etkilenen Dosyalar**:
+- `lua/neotion/input/editing.lua`
+- `spec/unit/input/editing_spec.lua`
+
+---
+
+### Bug 11.3: List Virtual Line Position (TODO)
+
+**Problem**: Yeni list item eklendiğinde virtual line yanlış pozisyonda.
 
 **Görüntü**:
 ```
 • - test item
-        ← virtual line (yanlış pozisyon)
+        ← virtual line (YANLIŞ)
   - asagiya indik
-  - bir daha indik
 ```
 
 **Beklenen**:
 ```
 • - test item
   - asagiya indik
-  - bir daha indik
         ← virtual line (list grubu sonu)
 ```
 
-**Root Cause Analizi**:
-- List item'lar `spacing_after() → 0` döner (grouped)
-- Yeni list item eklendikten sonra `refresh()` çağrılıyor
-- Ama extmark pozisyonları henüz güncellenmemiş olabilir
-- Virtual line eski pozisyonda kalıyor
-
 **Çözüm**:
-- `apply_block_spacing()` → list group detection logic'i kontrol et
-- Yeni block eklendikten sonra tam refresh gerekebilir
-- Extmark rebuild sonrası virtual lines yeniden hesaplanmalı
+- `mapping.add_block()` sonrası explicit `render.refresh(bufnr)` çağrısı
+- veya `rebuild_extmarks()` içinde virtual lines clear/reapply
 
 **Etkilenen Dosyalar**:
-- `lua/neotion/render/init.lua` - `apply_block_spacing()`
-- `lua/neotion/model/mapping.lua` - `rebuild_extmarks()`
+- `lua/neotion/model/mapping.lua`
+- `lua/neotion/render/init.lua`
 
 ---
 
-### Implementation Order
+## Phase 10: Editing Experience ✅ COMPLETED
 
-| Bug | Priority | Complexity | Status | Description |
-|-----|----------|------------|--------|-------------|
-| 11.1 | CRITICAL | Medium | ✅ Done | Cache sync - data loss riski |
-| 11.2 | CRITICAL | Medium | TODO | Enter behavior - UX broken |
-| 11.3 | HIGH | Low | TODO | Virtual line visual glitch |
+Tamamlandı: 2026-01-09
 
-**Sıra**: ~~11.1~~ → 11.2 → 11.3
+| Sub-Phase | Status | Description |
+|-----------|--------|-------------|
+| 10.1-10.5 | ✅ | Block fixes, orphan handling, type detection |
+| 10.6 | ✅ | Virtual lines for block spacing |
+| 10.7 | ✅ | Empty paragraph spacing optimization |
+| 10.7.1 | ✅ | Empty line sync to Notion |
+| 10.7.2 | ⏸️ | Live virtual line for o/O (optional) |
+| 10.8 | ✅ | Gutter icons (configurable) |
+| 10.9 | ✅ | Enter/Shift+Enter editing model |
+| 10.10 | ✅ | Continuation markers |
+
+### Kararlar
+
+| Konu | Karar |
+|------|-------|
+| Block spacing | Virtual lines (buffer'da yok, sadece görsel) |
+| Block indicators | Gutter icons (configurable, default: off) |
+| Enter davranışı | Enter = yeni block, Shift+Enter = soft break |
+| Multi-line | Sol tarafta continuation marker `│` |
+
+### Spacing Rules
+
+| Block Tipi | Sonrasında Virtual Lines |
+|------------|-------------------------|
+| paragraph | 1 |
+| heading_* | 1 |
+| bulleted_list_item | 0 (grouped) |
+| numbered_list_item | 0 (grouped) |
+| List grubu sonu | 1 |
+| quote, code, divider, callout | 1 |
+
+| Block Tipi | Öncesinde Extra |
+|------------|-----------------|
+| heading_1 | +1 (toplam 2) |
+
+### Enter Behavior by Block Type
+
+| Block Type | Enter | Empty + Enter |
+|------------|-------|---------------|
+| paragraph | New paragraph | New paragraph |
+| bulleted_list | `- ` continuation | Exit to paragraph |
+| numbered_list | `N. ` continuation | Exit to paragraph |
+| heading_* | New paragraph | N/A |
+| quote, code | Soft break | Exit to paragraph |
+
+### Gutter Icons
+
+| Block Type | Icon |
+|------------|------|
+| heading_1/2/3 | H1/H2/H3 |
+| bulleted_list | • |
+| numbered_list | # |
+| quote | │ |
+| code | <> |
+| divider | ── |
+| callout | ! |
+| paragraph | (none) |
+
+---
+
+## Future Phases
+
+### Phase 9.4: Link Completion `[[`
+
+Sayfa link completion. `[[` yazınca sayfa listesi açılır.
+
+### Phase 9.5: Mention Completion `@`
+
+Date/page mention. `@` yazınca tarih ve sayfa seçenekleri.
+
+### Block Type Roadmap
+
+**Desteklenen (Editable)**:
+- ✅ paragraph, heading_1/2/3, bulleted_list_item, quote, code
+
+**Desteklenen (Read-only)**:
+- ✅ divider, callout, toggle
+
+**Tier 1 (Basit)**:
+- ✅ numbered_list_item
+- [ ] to_do - checkbox `[ ]`/`[x]`
+
+**Tier 2 (Orta)**:
+- [ ] callout (editable)
+- [ ] toggle (editable)
+- [ ] bookmark
+- [ ] equation
+
+**Tier 3 (Karmaşık)**:
+- [ ] table
+- [ ] column_list/column
+- [ ] synced_block
+
+**Tier 4 (Media)**:
+- [ ] image, video, file, pdf, embed
+
+**Tier 5 (Advanced)**:
+- [ ] database views
+- [ ] link_to_page
+- [ ] table_of_contents
+
+---
+
+## Known Issues
+
+### Open
+
+- [ ] Block links (`notion://block/id`) desteklenmiyor
+- [ ] Nested list items
+- [ ] Extmark + `nvim_buf_set_lines` interaction issues
+- [ ] Color tags not syncing to Notion (`<c:red>text</c>`)
+- [ ] Live virtual line positioning for o/O (workaround: `<esc>`)
+
+### Resolved
+
+- [x] Multi-line content rendering bug (fixed: split newlines)
+- [x] Empty line sync (fixed: Phase 10.7.1)
+- [x] Shift+Enter soft break (fixed: Phase 10.9)
+- [x] Code block detection (fixed: fence pattern)
+- [x] Auto-continuation (fixed: Phase 10.9)
+- [x] Cache sync after push (fixed: Bug 11.1)
 
 ---
 
 ## Ideas
 
-- [ ] **`:edit` ile Discard Changes**: Normal neovim buffer'i gibi "discard unsaved changes" davranisi
-  - `:edit` → aninda pull calistir
-  - API'den gelen response ile buffer'i guncelle (notu yeni acmis gibi)
-  - Kaydedilmemis degisiklikleri at, cache'in ilk haline don
-  - UX: Kullanici buffer'da degisiklik yapti ama vazgecti → `:e` ile temize don
-
-- [ ] `[[` Link Completion (Phase 9.4)
-- [ ] `@` Mention completion (page/date) (Phase 9.5)
+- [ ] `:edit` ile Discard Changes - pull çağır, unsaved değişiklikleri at
 - [ ] `/` Transforms: `/` → `[[`, `/` → `@`
 
-## Known Issues
+---
 
-- [x] **Multi-line content rendering bug**: `buffer/init.lua:129` - `nvim_buf_set_lines` "replacement string item contains newlines" hatası veriyor
-  - Multi-line block content'i render ederken oluşuyor
-  - **FIX**: QuoteBlock, HeadingBlock, BulletedListBlock format() metodları newline'ları satırlara ayırıyor
+## Architecture Notes
 
-- [x] **Empty line doesn't sync to Notion**: `o` → boş satır → `<esc>` → sync → "No changes to sync" ✅ FIXED
-  - Root cause: Boş orphan line `segment_count=0` → block oluşturulmaz
-  - Fixed: `create_from_lines()` now creates empty paragraph for all-empty lines
-  - Fixed: `split_orphan_by_type_boundaries()` creates paragraph segment for all-empty orphans
-  - Creates: Empty paragraph `{ type: "paragraph", paragraph: { rich_text: [] } }` to Notion
-  - Phase 10.7.1 completed
+### Sync-Cache Flow
 
-- [ ] **Live virtual line positioning for o/O**: `o`/`O` ile insert mode'a girince virtual line cursor'un yanlış tarafında
-  - Workaround: `<esc>` basınca düzeliyor ✅
-  - Priority: LOW (Phase 10.7.2 veya Phase 10.9'da düzelecek)
+Detaylı flow: Serena memory `sync-cache-flow`
 
-- [x] **Shift+Enter creates new block instead of soft break**: ✅ FIXED (Phase 10.9)
-  - Shift+Enter now does soft break (same block, newline)
-  - Enter behavior is block-type aware (list continues, quote/code soft break)
+**Push Flow**:
+```
+Buffer → plan → execute → API → success → cache update → callback
+```
 
-- [x] **Code block detected as paragraph**: Code fence içeren content paragraph olarak algılanıyor ✅ FIXED (commit: a647eea)
-  - Added code fence pattern (` ``` `) to detection.lua
-  - Multi-line code block handling with state machine
+**Pull Flow**:
+```
+API fetch → hash compare → (skip if same) → cache → render → model setup
+```
 
-- [ ] Block links (`notion://block/id`) desteklenmiyor
-- [ ] Nested list items
-- [x] Auto-continuation (Enter after list item → new list item) ✅ FIXED (Phase 10.9)
-- [ ] Extmark + `nvim_buf_set_lines` interaction issues (testler pending)
-- [ ] **Color tags not syncing to Notion**: `<c:red>text</c>` buffer formatı Notion'a gönderilirken rich_text color annotation'a dönüştürülmüyor
-  - Buffer → Notion serialize işlemi color tag'leri parse etmeli
-  - `format/notion.lua` veya `model/rich_text.lua` içinde fix gerekebilir
+**Key Pattern**:
+```lua
+-- Cache update after sync
+if cache.is_initialized() then
+  cache_pages.save_content(page_id, serialized_blocks)
+  sync_state.update_after_push(page_id, content_hash)
+end
+```
 
-## Block Type Support Roadmap
+### Test Files
 
-Basitten karmasiga dogru block tipi destegi:
+| Area | Test File |
+|------|-----------|
+| Sync | `spec/unit/sync/init_spec.lua` |
+| Cache | `spec/unit/cache/*.lua` |
+| Render | `spec/unit/render/*.lua` |
+| Model | `spec/unit/model/*.lua` |
+| Input | `spec/unit/input/*.lua` |
 
-### Desteklenen (Editable)
-- [x] paragraph
-- [x] heading_1, heading_2, heading_3
-- [x] bulleted_list_item
-- [x] quote
-- [x] code
+---
 
-### Desteklenen (Read-only)
-- [x] divider
-- [x] callout
-- [x] toggle (icerik gizli)
+## Serena Memories
 
-### Tier 1: Basit Text-based
-- [x] **numbered_list_item** - bulleted_list_item ile neredeyse ayni, `1. ` prefix ✓
-- [ ] **to_do** - checkbox, `[ ]` / `[x]` prefix + checked state
-
-### Tier 2: Orta Karmasiklik
-- [ ] **callout** (editable) - icon + color + text, simdilik read-only
-- [ ] **toggle** (editable) - children block'lari goster/gizle
-- [ ] **bookmark** - URL + title + description
-- [ ] **equation** - LaTeX math, KaTeX rendering
-
-### Tier 3: Karmasik
-- [ ] **table** - satir/sutun, table_row children
-- [ ] **column_list** / **column** - yan yana layout
-- [ ] **synced_block** - baska sayfadan referans
-
-### Tier 4: Media & Embeds
-- [ ] **image** - URL veya uploaded
-- [ ] **video** - embed URL
-- [ ] **file** / **pdf** - attachment
-- [ ] **embed** - external content (iframe)
-
-### Tier 5: Advanced
-- [ ] **database** views (inline/full page)
-- [ ] **link_to_page** - sayfa referansi
-- [ ] **table_of_contents**
-- [ ] **breadcrumb**
+| Memory | Content |
+|--------|---------|
+| project-structure | Proje yapısı |
+| sync-cache-flow | Sync/cache akışları |
+| phase10-gutter-icons | Gutter icons implementasyonu |
+| phase-5-6-render-system-analysis | Render sistemi |
+| phase3-search-and-picker | Search/picker |
+| phase2-fixes-and-tests | Phase 2 notları |

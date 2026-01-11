@@ -14,6 +14,7 @@ M.ICONS = {
   quote = '│',
   code = '<>',
   divider = '──',
+  child_page = '->',
   -- paragraph = nil (no icon)
 }
 
@@ -32,6 +33,7 @@ M.HIGHLIGHT_GROUPS = {
   quote = 'NeotionGutterQuote',
   code = 'NeotionGutterCode',
   divider = 'NeotionGutterDivider',
+  child_page = 'NeotionGutterChildPage',
 }
 
 ---Default highlight group for unknown types

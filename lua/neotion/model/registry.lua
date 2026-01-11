@@ -23,6 +23,8 @@ local type_to_module = {
   bulleted_list_item = 'bulleted_list',
   numbered_list_item = 'numbered_list',
   code = 'code',
+  -- Phase 12: Navigation blocks
+  child_page = 'child_page',
   -- Phase 9+
   -- to_do = 'todo',
   -- toggle = 'toggle',

@@ -2,6 +2,10 @@
 --- Orchestrates inline formatting rendering with anti-conceal support
 ---@module 'neotion.render.init'
 
+-- TODO(neotion:FEAT-12.3:LOW): Show actual page icons instead of fixed emoji
+-- Fetch child page icon from cache/API asynchronously after initial render
+-- Fall back to 📄 if icon unavailable. Requires background metadata fetch.
+
 local anti_conceal = require('neotion.render.anti_conceal')
 local extmarks = require('neotion.render.extmarks')
 local format = require('neotion.format.init')

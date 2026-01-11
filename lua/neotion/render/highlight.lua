@@ -78,6 +78,9 @@ M.GROUPS = {
   -- Link styling
   NeotionLink = { link = '@markup.link.url' },
 
+  -- Child page (navigable sub-page link)
+  NeotionChildPage = { link = '@markup.link.url' },
+
   -- Gutter icons (treesitter-linked for consistency)
   NeotionGutterH1 = { link = '@markup.heading.1.markdown' },
   NeotionGutterH2 = { link = '@markup.heading.2.markdown' },
@@ -86,6 +89,7 @@ M.GROUPS = {
   NeotionGutterQuote = { link = '@markup.quote' },
   NeotionGutterCode = { link = '@markup.raw.markdown_inline' },
   NeotionGutterDivider = { link = 'Comment' },
+  NeotionGutterChildPage = { link = '@markup.link.url' },
   NeotionGutterDefault = { link = 'Comment' },
   NeotionGutterContinuation = { link = 'NonText' },
 }
@@ -139,10 +143,33 @@ function M.get_heading_highlight(level)
   return 'NeotionH' .. level
 end
 
+--- Resolve a highlight group with fallback support
+--- If the linked group has no attributes, use fallback
+---@param link_target string The highlight group to link to
+---@param fallback vim.api.keyset.highlight Fallback attributes if link doesn't resolve
+---@return vim.api.keyset.highlight
+local function resolve_with_fallback(link_target, fallback)
+  local hl = vim.api.nvim_get_hl(0, { name = link_target, link = false })
+  if vim.tbl_isempty(hl) then
+    return fallback
+  end
+  return { link = link_target }
+end
+
 --- Setup all highlight groups
 function M.setup()
+  -- Define fallback for link-style highlights (blue, underlined)
+  local link_fallback = { fg = M.NOTION_COLORS.blue, underline = true }
+
   for name, opts in pairs(M.GROUPS) do
-    vim.api.nvim_set_hl(0, name, opts)
+    local final_opts = opts
+
+    -- Handle tree-sitter link targets that may not exist
+    if opts.link and opts.link:match('^@') then
+      final_opts = resolve_with_fallback(opts.link, link_fallback)
+    end
+
+    vim.api.nvim_set_hl(0, name, final_opts)
   end
 end
 

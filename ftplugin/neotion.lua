@@ -32,6 +32,24 @@ local function setup_keymaps()
 
   -- Override gf to follow links in neotion buffers
   buf_map('n', 'gf', '<Plug>(NeotionGotoLink)', 'Follow link under cursor')
+
+  -- Optionally enable <CR> to follow links (smart: follows if on link, else default behavior)
+  if keymaps.enter_follows_link then
+    vim.keymap.set('n', '<CR>', function()
+      local navigation = require('neotion.navigation')
+      -- Check if there's a link or child_page at cursor
+      local link = navigation.get_link_at_cursor()
+      local child_page_id = navigation.get_child_page_at_cursor()
+
+      if link or child_page_id then
+        -- Follow the link
+        vim.cmd('normal! ' .. vim.api.nvim_replace_termcodes('<Plug>(NeotionGotoLink)', true, true, true))
+      else
+        -- Default <CR> behavior in normal mode: move down and go to first non-blank
+        vim.cmd('normal! j^')
+      end
+    end, { buffer = bufnr, desc = 'Follow link or move down' })
+  end
 end
 
 -- Setup default formatting keymaps if enabled

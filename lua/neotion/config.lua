@@ -51,6 +51,7 @@
 ---@field pull? string|false Keymap for force pull (default: "<leader>nl")
 ---@field goto_parent? string|false Keymap for navigating to parent (default: "<leader>nu")
 ---@field goto_link? string|false Keymap for following link under cursor (default: "<leader>ng")
+---@field enter_follows_link? boolean Enable <CR> to follow links in normal mode (default: false)
 ---@field search? string|false Keymap for search (default: "<leader>nf")
 
 ---@class neotion.InputConfig
@@ -123,6 +124,7 @@ vim.g.neotion = vim.g.neotion
 ---@field pull string|false
 ---@field goto_parent string|false
 ---@field goto_link string|false
+---@field enter_follows_link boolean
 ---@field search string|false
 
 ---@class neotion.InternalInputConfig
@@ -170,6 +172,7 @@ local default_config = {
     pull = '<leader>nl',
     goto_parent = '<leader>nu',
     goto_link = '<leader>ng',
+    enter_follows_link = false, -- Enable <CR> to follow links (gf always works)
     search = '<leader>nf',
   },
   log_level = 'info',
@@ -301,6 +304,11 @@ local function validate(opts)
       ['keymaps.pull'] = { opts.keymaps.pull, { 'string', 'nil', 'boolean' }, 'string, nil, or false' },
       ['keymaps.goto_parent'] = { opts.keymaps.goto_parent, { 'string', 'nil', 'boolean' }, 'string, nil, or false' },
       ['keymaps.goto_link'] = { opts.keymaps.goto_link, { 'string', 'nil', 'boolean' }, 'string, nil, or false' },
+      ['keymaps.enter_follows_link'] = {
+        opts.keymaps.enter_follows_link,
+        { 'boolean', 'nil' },
+        'boolean or nil',
+      },
       ['keymaps.search'] = { opts.keymaps.search, { 'string', 'nil', 'boolean' }, 'string, nil, or false' },
     })
     if not keymaps_ok then

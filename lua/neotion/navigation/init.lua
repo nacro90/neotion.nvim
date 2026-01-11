@@ -200,11 +200,57 @@ end
 ---@param opts? {open_page?: fun(page_id: string)}
 function M.goto_link_at_cursor(opts)
   local link = M.get_link_at_cursor()
-  if not link then
-    vim.notify('No link under cursor', vim.log.levels.INFO)
+  if link then
+    M.goto_link(link, opts)
     return
   end
-  M.goto_link(link, opts)
+
+  -- No markdown link found, check if cursor is on a child_page block
+  local child_page_id = M.get_child_page_at_cursor()
+  if child_page_id then
+    log.debug('Navigating to child page', { page_id = child_page_id })
+    -- Reuse existing link navigation logic
+    ---@type neotion.Link
+    local synthetic_link = {
+      text = '',
+      url = 'notion://page/' .. child_page_id,
+      type = 'notion_page',
+      page_id = child_page_id,
+      start_col = 1,
+      end_col = 1,
+    }
+    M.goto_link(synthetic_link, opts)
+    return
+  end
+
+  vim.notify('No link under cursor', vim.log.levels.INFO)
+end
+
+---Get child page ID if cursor is on a child_page block line
+---@return string|nil page_id
+function M.get_child_page_at_cursor()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local line = cursor[1] -- 1-indexed
+
+  -- Check if this buffer has block mapping
+  local ok, mapping = pcall(require, 'neotion.model.mapping')
+  if not ok then
+    return nil
+  end
+
+  -- Find block at this line
+  local block = mapping.get_block_at_line(bufnr, line)
+  if not block then
+    return nil
+  end
+
+  -- Check if it's a child_page block
+  if block.type == 'child_page' and type(block.get_page_id) == 'function' then
+    return block:get_page_id()
+  end
+
+  return nil
 end
 
 return M

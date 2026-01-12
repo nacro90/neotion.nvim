@@ -24,7 +24,7 @@ Neovim'de Notion entegrasyonu - **zero data loss** prensibiyle.
 grep -rn "TODO(neotion:" --include="*.lua" lua/
 
 # Sıradaki TODO (en yüksek priority)
-/todos next
+/todo-list next
 ```
 
 ### Nereye Bakılır

@@ -232,6 +232,9 @@ function M.resolve_child_page_icons(bufnr, blocks, header_line_count)
       if old_icon and old_icon ~= icon then
         local icon_end_col = icon_start_col + #old_icon
 
+        -- Preserve modified state (icon updates are cosmetic, not user edits)
+        local was_modified = vim.bo[bufnr].modified
+
         -- Replace just the icon using nvim_buf_set_text (preserves extmarks)
         vim.api.nvim_buf_set_text(
           bufnr,
@@ -241,6 +244,10 @@ function M.resolve_child_page_icons(bufnr, blocks, header_line_count)
           icon_end_col, -- end col (byte)
           { icon }
         )
+
+        -- Restore modified state
+        vim.bo[bufnr].modified = was_modified
+
         log.debug('Child page icon updated', {
           page_id = blk:get_page_id(),
           line = start_line,

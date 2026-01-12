@@ -162,6 +162,19 @@ function M.get_page(page_id)
   return row
 end
 
+--- Get icon for a page (lightweight accessor for icon cache)
+---@param page_id string Normalized page ID
+---@return string? icon Icon emoji/character or nil if not found
+function M.get_icon(page_id)
+  local db = get_db()
+  if not db then
+    return nil
+  end
+
+  local row = db:query_one('SELECT icon FROM pages WHERE id = :id AND is_deleted = 0', { id = page_id })
+  return row and row.icon or nil
+end
+
 --- Get page content (blocks) from cache
 ---@param page_id string Normalized page ID
 ---@return table[]? blocks Array of block objects or nil if not found

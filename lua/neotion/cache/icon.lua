@@ -1,6 +1,7 @@
----Icon resolver for child_page blocks
----Resolves page icons from cache or API asynchronously
----@module 'neotion.model.icon_resolver'
+---Icon cache for child_page blocks
+---Provides L1 (in-memory) cache with FIFO eviction
+---Falls back to L2 (persistent SQLite cache), then API fetch
+---@module 'neotion.cache.icon'
 
 -- TODO(neotion:FEAT-12.4:LOW): Kitty graphics protocol support for image icons
 -- External/file icon types are image URLs. Instead of Nerd Font placeholder,
@@ -12,7 +13,7 @@
 
 local M = {}
 
-local log = require('neotion.log').get_logger('model.icon_resolver')
+local log = require('neotion.log').get_logger('cache.icon')
 
 -- Configuration
 local MAX_CACHE_SIZE = 100
@@ -20,13 +21,22 @@ local MAX_CACHE_SIZE = 100
 ---@type table<string, string|nil> In-memory cache for resolved icons
 local resolved_icons = {}
 
----@type string[] LRU order tracking for cache eviction
+---@type string[] FIFO order tracking for cache eviction
 local cache_order = {}
 
 ---@type table<string, fun(icon: string|nil)[]> Pending callbacks per page (for deduplication)
 local pending_callbacks = {}
 
----Cache an icon with LRU eviction
+-- Lazy-loaded dependencies
+local function get_pages_cache()
+  return require('neotion.cache.pages')
+end
+
+local function get_pages_api()
+  return require('neotion.api.pages')
+end
+
+---Cache an icon with FIFO eviction
 ---@param page_id string
 ---@param icon string|nil
 local function cache_icon(page_id, icon)
@@ -48,16 +58,11 @@ local function cache_icon(page_id, icon)
   end
 end
 
----Try to get icon from cache (sync)
+---Try to get icon from persistent cache (sync)
 ---@param page_id string
 ---@return string|nil icon The icon if found in cache
-local function get_from_cache(page_id)
-  local cache = require('neotion.cache.pages')
-  local page = cache.get_page(page_id)
-  if page and page.icon then
-    return page.icon
-  end
-  return nil
+local function get_from_persistent_cache(page_id)
+  return get_pages_cache().get_icon(page_id)
 end
 
 ---Fetch page metadata from API and cache the icon
@@ -75,7 +80,7 @@ local function fetch_from_api(page_id, callback)
   pending_callbacks[page_id] = { callback }
   log.debug('Starting icon fetch', { page_id = page_id })
 
-  local pages_api = require('neotion.api.pages')
+  local pages_api = get_pages_api()
   log.debug('Fetching page for icon', { page_id = page_id })
   pages_api.get(page_id, function(result)
     local callbacks = pending_callbacks[page_id]
@@ -105,8 +110,7 @@ local function fetch_from_api(page_id, callback)
     log.debug('Icon resolved', { page_id = page_id, icon = icon })
 
     -- Also save to persistent cache
-    local cache = require('neotion.cache.pages')
-    cache.save_page(page_id, result.page)
+    get_pages_cache().save_page(page_id, result.page)
 
     -- Call all queued callbacks
     for _, cb in ipairs(callbacks) do
@@ -132,7 +136,7 @@ function M.resolve(page_id, on_resolved)
   end
 
   -- Check persistent cache
-  local cached_icon = get_from_cache(page_id)
+  local cached_icon = get_from_persistent_cache(page_id)
   if cached_icon then
     cache_icon(page_id, cached_icon)
     vim.schedule(function()
@@ -153,11 +157,11 @@ function M.get_cached(page_id)
   if resolved_icons[page_id] ~= nil then
     return resolved_icons[page_id]
   end
-  return get_from_cache(page_id)
+  return get_from_persistent_cache(page_id)
 end
 
 ---Clear the in-memory cache
-function M.clear_cache()
+function M.clear()
   resolved_icons = {}
   cache_order = {}
   pending_callbacks = {}

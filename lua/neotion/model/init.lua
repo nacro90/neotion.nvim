@@ -203,7 +203,7 @@ end
 ---@param blocks neotion.Block[]
 ---@param header_line_count integer Number of header lines (for calculating block line positions)
 function M.resolve_child_page_icons(bufnr, blocks, header_line_count)
-  local icon_resolver = require('neotion.model.icon_resolver')
+  local icon_cache = require('neotion.cache.icon')
 
   -- Helper to update icon in buffer (surgical replacement preserves extmarks)
   local function update_buffer_icon(blk, icon, source)
@@ -267,7 +267,7 @@ function M.resolve_child_page_icons(bufnr, blocks, header_line_count)
       local page_id = block:get_page_id()
 
       -- Try to get cached icon first (sync)
-      local cached = icon_resolver.get_cached(page_id)
+      local cached = icon_cache.get_cached(page_id)
       if cached then
         block:set_icon(cached)
         log.debug('Child page icon set from cache', { page_id = page_id, icon = cached })
@@ -275,7 +275,7 @@ function M.resolve_child_page_icons(bufnr, blocks, header_line_count)
         update_buffer_icon(block, cached, 'cache')
       else
         -- Start async resolve
-        icon_resolver.resolve(page_id, function(icon)
+        icon_cache.resolve(page_id, function(icon)
           if icon then
             block:set_icon(icon)
             log.debug('Child page icon resolved from API', { page_id = page_id, icon = icon })

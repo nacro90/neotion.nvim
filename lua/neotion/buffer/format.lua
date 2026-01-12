@@ -86,9 +86,9 @@ function M.format_block(block, indent, opts)
     table.insert(lines, prefix .. '---')
   elseif block_type == 'child_page' then
     -- Use cached icon if available, fallback to Nerd Font page icon
-    local icon_resolver = require('neotion.model.icon_resolver')
+    local icon_cache = require('neotion.cache.icon')
     local page_id = block.id
-    local icon = icon_resolver.get_cached(page_id) or '\u{f0f6}' -- nf-fa-file_text
+    local icon = icon_cache.get_cached(page_id) or '\u{f0f6}' -- nf-fa-file_text
     table.insert(lines, prefix .. icon .. ' ' .. text)
   elseif block_type == 'child_database' then
     table.insert(lines, prefix .. '🗃️ ' .. text)

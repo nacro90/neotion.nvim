@@ -1,25 +1,26 @@
-describe('neotion.model.icon_resolver', function()
-  local icon_resolver
-  local mock_cache
+describe('neotion.cache.icon', function()
+  local icon_cache
+  local mock_pages_cache
   local mock_pages_api
 
   before_each(function()
     -- Clear module cache
-    package.loaded['neotion.model.icon_resolver'] = nil
+    package.loaded['neotion.cache.icon'] = nil
     package.loaded['neotion.cache.pages'] = nil
     package.loaded['neotion.api.pages'] = nil
 
     -- Create mock cache
-    mock_cache = {
+    mock_pages_cache = {
+      icons = {},
       pages = {},
-      get_page = function(page_id)
-        return mock_cache.pages[page_id]
+      get_icon = function(page_id)
+        return mock_pages_cache.icons[page_id]
       end,
       save_page = function(page_id, page)
-        mock_cache.pages[page_id] = {
-          id = page_id,
-          icon = page.icon and page.icon.emoji,
-        }
+        mock_pages_cache.pages[page_id] = page
+        if page.icon and page.icon.emoji then
+          mock_pages_cache.icons[page_id] = page.icon.emoji
+        end
         return true
       end,
     }
@@ -36,22 +37,25 @@ describe('neotion.model.icon_resolver', function()
         end
         return nil
       end,
+      get_title = function(page)
+        return page and page.properties and 'Test Title' or nil
+      end,
     }
 
     -- Inject mocks
-    package.loaded['neotion.cache.pages'] = mock_cache
+    package.loaded['neotion.cache.pages'] = mock_pages_cache
     package.loaded['neotion.api.pages'] = mock_pages_api
 
-    icon_resolver = require('neotion.model.icon_resolver')
-    icon_resolver.clear_cache()
+    icon_cache = require('neotion.cache.icon')
+    icon_cache.clear()
   end)
 
   describe('resolve', function()
     it('should return cached icon from persistent cache', function()
-      mock_cache.pages['page123'] = { id = 'page123', icon = '🚀' }
+      mock_pages_cache.icons['page123'] = '🚀'
 
       local result = nil
-      local sync_result = icon_resolver.resolve('page123', function(icon)
+      local sync_result = icon_cache.resolve('page123', function(icon)
         result = icon
       end)
 
@@ -67,7 +71,7 @@ describe('neotion.model.icon_resolver', function()
 
     it('should fetch from API when not in cache', function()
       local result = nil
-      local sync_result = icon_resolver.resolve('page456', function(icon)
+      local sync_result = icon_cache.resolve('page456', function(icon)
         result = icon
       end)
 
@@ -87,7 +91,7 @@ describe('neotion.model.icon_resolver', function()
 
     it('should cache resolved icon in memory', function()
       -- First resolve - triggers API call
-      icon_resolver.resolve('page789', function() end)
+      icon_cache.resolve('page789', function() end)
 
       -- Simulate API response
       mock_pages_api.pending_callbacks['page789']({
@@ -98,13 +102,13 @@ describe('neotion.model.icon_resolver', function()
       })
 
       -- Second resolve - should use in-memory cache
-      local sync_result = icon_resolver.resolve('page789', function() end)
+      local sync_result = icon_cache.resolve('page789', function() end)
       assert.are.equal('🎯', sync_result)
     end)
 
     it('should handle API error gracefully', function()
       local result = 'not_called'
-      icon_resolver.resolve('bad_page', function(icon)
+      icon_cache.resolve('bad_page', function(icon)
         result = icon
       end)
 
@@ -125,9 +129,9 @@ describe('neotion.model.icon_resolver', function()
       end
 
       -- Multiple resolves for same page
-      icon_resolver.resolve('dup_page', function() end)
-      icon_resolver.resolve('dup_page', function() end)
-      icon_resolver.resolve('dup_page', function() end)
+      icon_cache.resolve('dup_page', function() end)
+      icon_cache.resolve('dup_page', function() end)
+      icon_cache.resolve('dup_page', function() end)
 
       -- Should only call API once
       assert.are.equal(1, call_count)
@@ -137,13 +141,13 @@ describe('neotion.model.icon_resolver', function()
       local callback_results = {}
 
       -- Queue multiple callbacks for same page
-      icon_resolver.resolve('multi_cb', function(icon)
+      icon_cache.resolve('multi_cb', function(icon)
         table.insert(callback_results, { cb = 1, icon = icon })
       end)
-      icon_resolver.resolve('multi_cb', function(icon)
+      icon_cache.resolve('multi_cb', function(icon)
         table.insert(callback_results, { cb = 2, icon = icon })
       end)
-      icon_resolver.resolve('multi_cb', function(icon)
+      icon_cache.resolve('multi_cb', function(icon)
         table.insert(callback_results, { cb = 3, icon = icon })
       end)
 
@@ -165,62 +169,62 @@ describe('neotion.model.icon_resolver', function()
 
   describe('get_cached', function()
     it('should return nil when not cached', function()
-      local result = icon_resolver.get_cached('unknown_page')
+      local result = icon_cache.get_cached('unknown_page')
       assert.is_nil(result)
     end)
 
     it('should return icon from in-memory cache', function()
       -- Populate via resolve
-      mock_cache.pages['cached_page'] = { id = 'cached_page', icon = '🔥' }
-      icon_resolver.resolve('cached_page', function() end)
+      mock_pages_cache.icons['cached_page'] = '🔥'
+      icon_cache.resolve('cached_page', function() end)
 
-      local result = icon_resolver.get_cached('cached_page')
+      local result = icon_cache.get_cached('cached_page')
       assert.are.equal('🔥', result)
     end)
 
     it('should return icon from persistent cache', function()
-      mock_cache.pages['persistent_page'] = { id = 'persistent_page', icon = '💡' }
+      mock_pages_cache.icons['persistent_page'] = '💡'
 
-      local result = icon_resolver.get_cached('persistent_page')
+      local result = icon_cache.get_cached('persistent_page')
       assert.are.equal('💡', result)
     end)
   end)
 
   describe('is_pending', function()
     it('should return false when no fetch pending', function()
-      assert.is_false(icon_resolver.is_pending('some_page'))
+      assert.is_false(icon_cache.is_pending('some_page'))
     end)
 
     it('should return true when fetch is pending', function()
-      icon_resolver.resolve('pending_page', function() end)
-      assert.is_true(icon_resolver.is_pending('pending_page'))
+      icon_cache.resolve('pending_page', function() end)
+      assert.is_true(icon_cache.is_pending('pending_page'))
     end)
 
     it('should return false after fetch completes', function()
-      icon_resolver.resolve('complete_page', function() end)
+      icon_cache.resolve('complete_page', function() end)
 
       -- Complete the fetch
       mock_pages_api.pending_callbacks['complete_page']({
         page = { id = 'complete_page', icon = { type = 'emoji', emoji = '✅' } },
       })
 
-      assert.is_false(icon_resolver.is_pending('complete_page'))
+      assert.is_false(icon_cache.is_pending('complete_page'))
     end)
   end)
 
-  describe('clear_cache', function()
+  describe('clear', function()
     it('should clear in-memory cache', function()
-      mock_cache.pages['clear_test'] = { id = 'clear_test', icon = '🧹' }
-      icon_resolver.resolve('clear_test', function() end)
+      mock_pages_cache.icons['clear_test'] = '🧹'
+      icon_cache.resolve('clear_test', function() end)
 
       -- Verify cached
-      assert.are.equal('🧹', icon_resolver.get_cached('clear_test'))
+      assert.are.equal('🧹', icon_cache.get_cached('clear_test'))
 
       -- Clear
-      icon_resolver.clear_cache()
+      icon_cache.clear()
 
       -- In-memory cleared, but persistent still there
-      local result = icon_resolver.get_cached('clear_test')
+      local result = icon_cache.get_cached('clear_test')
       assert.are.equal('🧹', result) -- Still gets from persistent
     end)
   end)

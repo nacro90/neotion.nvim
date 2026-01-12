@@ -490,6 +490,104 @@ end, { desc = 'Neotion: Color (visual)' })
 -- Define highlight groups for read-only blocks
 vim.api.nvim_set_hl(0, 'NeotionReadOnly', { bg = '#2a2a2a', italic = true, default = true })
 
+-- Handle :e and :e! commands for neotion buffers
+-- :e  - If modified: error. If not modified: background pull (keep current content)
+-- :e! - Force reload from cache + background pull
+vim.api.nvim_create_autocmd('BufReadCmd', {
+  pattern = 'neotion://*',
+  callback = function(args)
+    local bufnr = args.buf
+    local buffer = require('neotion.buffer')
+    local bang = vim.v.cmdbang == 1
+
+    -- Check if this is an existing neotion buffer (reload) or new buffer
+    local buf_data = buffer.get_data(bufnr)
+
+    if buf_data then
+      -- Existing buffer - this is a reload (:e or :e!)
+      local is_modified = vim.bo[bufnr].modified
+
+      if is_modified and not bang then
+        -- :e on modified buffer - reject like vim
+        -- BufReadCmd already cleared buffer, restore it first
+        local sync = require('neotion.sync')
+        sync.pull(bufnr) -- Restore content
+        vim.api.nvim_err_writeln('E37: No write since last change (add ! to override)')
+        return
+      end
+
+      -- Helper to restore buffer from cache
+      local function restore_from_cache()
+        local cache = require('neotion.cache.pages')
+        local page_id = buf_data.page_id
+
+        local page_meta = cache.get_page(page_id)
+        local blocks_raw = cache.get_content(page_id)
+
+        if page_meta and blocks_raw then
+          local model = require('neotion.model')
+          local format = require('neotion.buffer.format')
+
+          local blocks = model.deserialize_blocks(blocks_raw)
+          local header_lines =
+            format.format_header_from_metadata(page_meta.title, page_meta.parent_type, page_meta.parent_id)
+          local block_lines = model.format_blocks(blocks)
+
+          local lines = {}
+          vim.list_extend(lines, header_lines)
+          vim.list_extend(lines, block_lines)
+          buffer.set_content(bufnr, lines)
+          model.setup_buffer(bufnr, blocks, #header_lines)
+
+          -- Re-render to apply virtual lines and extmarks
+          local render = require('neotion.render')
+          if render.is_attached(bufnr) then
+            render.refresh(bufnr)
+          end
+          return true
+        end
+        return false
+      end
+
+      if bang and is_modified then
+        -- :e! on modified buffer - reload from cache first, then pull
+        if restore_from_cache() then
+          vim.notify('[neotion] Reverted to cached version', vim.log.levels.INFO)
+        else
+          -- No cache, just pull
+          local sync = require('neotion.sync')
+          sync.pull(bufnr)
+          return
+        end
+      else
+        -- :e on unmodified buffer - restore current content first (BufReadCmd clears buffer)
+        -- Then do background pull
+        restore_from_cache()
+      end
+
+      -- Background pull (both :e and :e!)
+      local sync = require('neotion.sync')
+      sync.pull(bufnr, function(success, message)
+        if success then
+          vim.notify('[neotion] ' .. message, vim.log.levels.INFO)
+        end
+      end)
+    else
+      -- New buffer - extract page_id from buffer name and open
+      local bufname = vim.api.nvim_buf_get_name(bufnr)
+      local page_id = bufname:match('neotion://(%S+)')
+      if page_id then
+        -- Remove any title suffix (e.g., "neotion://abc123 Title" -> "abc123")
+        page_id = page_id:match('^(%S+)') or page_id
+        require('neotion').open(page_id)
+      else
+        vim.api.nvim_err_writeln('[neotion] Invalid buffer name: ' .. bufname)
+      end
+    end
+  end,
+  desc = 'Neotion: Handle :e and :e! for reload/pull',
+})
+
 -- Handle :w command for neotion buffers
 vim.api.nvim_create_autocmd('BufWriteCmd', {
   pattern = 'neotion://*',

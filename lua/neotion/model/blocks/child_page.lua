@@ -7,11 +7,13 @@ local base = require('neotion.model.block')
 local Block = base.Block
 
 -- Default icon for child pages (used when actual icon not available)
-local DEFAULT_ICON = '📄'
+-- Uses Nerd Font file_text icon (nf-fa-file_text U+F0F6)
+local DEFAULT_ICON = '\u{f0f6}'
 
 ---@class neotion.ChildPageBlock : neotion.Block
 ---@field title string The child page title
 ---@field page_id string The child page ID (same as block ID for child_page blocks)
+---@field icon string|nil Custom icon from page metadata (nil means use DEFAULT_ICON)
 local ChildPageBlock = setmetatable({}, { __index = Block })
 ChildPageBlock.__index = ChildPageBlock
 
@@ -33,7 +35,22 @@ function ChildPageBlock.new(raw)
   -- The block ID is also the page ID for child_page blocks
   self.page_id = raw.id
 
+  -- Icon starts as nil (will be resolved from cache/API later)
+  self.icon = nil
+
   return self
+end
+
+---Set custom icon for this child page
+---@param icon string|nil The icon to display (nil resets to default)
+function ChildPageBlock:set_icon(icon)
+  self.icon = icon
+end
+
+---Get the icon to display (custom or default)
+---@return string
+function ChildPageBlock:get_display_icon()
+  return self.icon or DEFAULT_ICON
 end
 
 ---Format child page to buffer lines
@@ -44,8 +61,9 @@ function ChildPageBlock:format(opts)
   local indent_size = opts and opts.indent_size or 2
   local prefix = string.rep(' ', indent * indent_size)
 
-  -- Format: 📄 Page Title
-  return { prefix .. DEFAULT_ICON .. ' ' .. self.title }
+  -- Format: <icon> Page Title (use custom icon if set, else default)
+  local display_icon = self:get_display_icon()
+  return { prefix .. display_icon .. ' ' .. self.title }
 end
 
 ---Serialize child page to Notion API JSON
@@ -74,8 +92,9 @@ function ChildPageBlock:matches_content(lines)
   if #lines == 0 then
     return false
   end
-  -- Check if the line contains the expected format
-  local expected = DEFAULT_ICON .. ' ' .. self.title
+  -- Check if the line contains the expected format (with current display icon)
+  local display_icon = self:get_display_icon()
+  local expected = display_icon .. ' ' .. self.title
   -- Strip leading whitespace for comparison
   local line = lines[1]:match('^%s*(.*)$')
   return line == expected
@@ -91,8 +110,11 @@ function ChildPageBlock:render(ctx)
   end
 
   local line = lines[1]
-  -- Find the title portion (after the icon)
-  local icon_pattern = '^(%s*)' .. DEFAULT_ICON .. ' '
+  -- Find the title portion (after the icon) - use current display icon
+  local display_icon = self:get_display_icon()
+  -- Escape special pattern characters in icon (emojis are usually safe, but be defensive)
+  local escaped_icon = vim.pesc(display_icon)
+  local icon_pattern = '^(%s*)' .. escaped_icon .. ' '
   local prefix = line:match(icon_pattern)
   if not prefix then
     return false

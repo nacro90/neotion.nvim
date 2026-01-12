@@ -197,4 +197,87 @@ function M.get_block_by_id(bufnr, block_id)
   return mapping.get_block_by_id(bufnr, block_id)
 end
 
+---Resolve icons for child_page blocks asynchronously
+---When icons are resolved, updates block and refreshes buffer line
+---@param bufnr integer
+---@param blocks neotion.Block[]
+---@param header_line_count integer Number of header lines (for calculating block line positions)
+function M.resolve_child_page_icons(bufnr, blocks, header_line_count)
+  local icon_resolver = require('neotion.model.icon_resolver')
+
+  -- Helper to update icon in buffer (surgical replacement preserves extmarks)
+  local function update_buffer_icon(blk, icon, source)
+    vim.schedule(function()
+      if not vim.api.nvim_buf_is_valid(bufnr) then
+        return
+      end
+      local start_line, _ = blk:get_line_range()
+      if not start_line then
+        return
+      end
+      local current_line = vim.api.nvim_buf_get_lines(bufnr, start_line - 1, start_line, false)[1]
+      if not current_line then
+        return
+      end
+
+      -- Find leading spaces
+      local leading_spaces = current_line:match('^(%s*)') or ''
+      local icon_start_col = #leading_spaces
+
+      -- Find the old icon - it ends at the space before the title
+      -- Pattern: {spaces}{icon} {title}
+      local after_spaces = current_line:sub(icon_start_col + 1)
+      local old_icon = after_spaces:match('^([^ ]+)')
+
+      if old_icon and old_icon ~= icon then
+        local icon_end_col = icon_start_col + #old_icon
+
+        -- Replace just the icon using nvim_buf_set_text (preserves extmarks)
+        vim.api.nvim_buf_set_text(
+          bufnr,
+          start_line - 1, -- 0-indexed line
+          icon_start_col, -- start col (byte)
+          start_line - 1, -- end line
+          icon_end_col, -- end col (byte)
+          { icon }
+        )
+        log.debug('Child page icon updated', {
+          page_id = blk:get_page_id(),
+          line = start_line,
+          icon = icon,
+          source = source,
+        })
+
+        -- Refresh buffer protection snapshot so icon change isn't reverted
+        local protection = require('neotion.buffer.protection')
+        protection.refresh(bufnr)
+      end
+    end)
+  end
+
+  for _, block in ipairs(blocks) do
+    if block.type == 'child_page' and block.set_icon and block.get_page_id then
+      local page_id = block:get_page_id()
+
+      -- Try to get cached icon first (sync)
+      local cached = icon_resolver.get_cached(page_id)
+      if cached then
+        block:set_icon(cached)
+        log.debug('Child page icon set from cache', { page_id = page_id, icon = cached })
+        -- Also update buffer line (buffer was rendered with default icon)
+        update_buffer_icon(block, cached, 'cache')
+      else
+        -- Start async resolve
+        icon_resolver.resolve(page_id, function(icon)
+          if icon then
+            block:set_icon(icon)
+            log.debug('Child page icon resolved from API', { page_id = page_id, icon = icon })
+            update_buffer_icon(block, icon, 'api')
+          end
+        end)
+      end
+    end
+  end
+end
+
 return M

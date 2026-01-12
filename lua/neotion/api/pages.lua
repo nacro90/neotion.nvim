@@ -209,11 +209,11 @@ function M.get_icon(page)
   if page.icon.type == 'emoji' then
     return page.icon.emoji
   elseif page.icon.type == 'external' and page.icon.external then
-    -- External icons are URLs, return a placeholder
-    return '🔗'
+    -- External icons are URLs, return Nerd Font image icon
+    return '\u{f03e}' -- nf-fa-image
   elseif page.icon.type == 'file' and page.icon.file then
-    -- File icons are uploaded images, return a placeholder
-    return '📄'
+    -- File icons are uploaded images, return Nerd Font image icon
+    return '\u{f03e}' -- nf-fa-image
   end
 
   return nil

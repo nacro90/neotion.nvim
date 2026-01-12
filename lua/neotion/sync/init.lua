@@ -670,6 +670,9 @@ function M.pull(bufnr, callback)
             log.debug('Pull: setting up model layer')
             model.setup_buffer(bufnr, blocks, header_line_count)
 
+            -- Resolve child_page icons asynchronously
+            model.resolve_child_page_icons(bufnr, blocks, header_line_count)
+
             -- Update buffer data
             buffer.update_data(bufnr, {
               last_sync = os.date('!%Y-%m-%dT%H:%M:%SZ'),

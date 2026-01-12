@@ -2,6 +2,12 @@
 ---@class neotion.buffer.Format
 local M = {}
 
+-- TODO(neotion:FEAT-12.1:MEDIUM): Improve header visual appearance
+-- Header lines are currently plain text. Could be rendered with:
+-- - Custom highlight for title
+-- - Icon + styling for parent info
+-- - Full-width line for divider
+
 ---@class neotion.FormatOpts
 ---@field indent_size? integer Spaces per indent level (default: 2)
 
@@ -79,7 +85,11 @@ function M.format_block(block, indent, opts)
   elseif block_type == 'divider' then
     table.insert(lines, prefix .. '---')
   elseif block_type == 'child_page' then
-    table.insert(lines, prefix .. '📄 ' .. text)
+    -- Use cached icon if available, fallback to Nerd Font page icon
+    local icon_resolver = require('neotion.model.icon_resolver')
+    local page_id = block.id
+    local icon = icon_resolver.get_cached(page_id) or '\u{f0f6}' -- nf-fa-file_text
+    table.insert(lines, prefix .. icon .. ' ' .. text)
   elseif block_type == 'child_database' then
     table.insert(lines, prefix .. '🗃️ ' .. text)
   elseif block_type == 'image' then

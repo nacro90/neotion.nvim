@@ -212,7 +212,7 @@ describe('neotion.api.pages', function()
 
       local icon = pages.get_icon(page)
 
-      assert.are.equal('🔗', icon)
+      assert.are.equal('\u{f03e}', icon) -- nf-fa-image
     end)
 
     it('should return placeholder for file icon', function()
@@ -225,7 +225,7 @@ describe('neotion.api.pages', function()
 
       local icon = pages.get_icon(page)
 
-      assert.are.equal('📄', icon)
+      assert.are.equal('\u{f03e}', icon) -- nf-fa-image
     end)
 
     it('should return nil for unknown icon type', function()

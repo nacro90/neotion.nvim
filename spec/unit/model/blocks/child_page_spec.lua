@@ -78,7 +78,7 @@ describe('neotion.model.blocks.child_page', function()
       local lines = block:format()
 
       assert.are.equal(1, #lines)
-      assert.are.equal('📄 My Page', lines[1])
+      assert.are.equal('\u{f0f6} My Page', lines[1])
     end)
 
     it('should respect indent options', function()
@@ -93,7 +93,7 @@ describe('neotion.model.blocks.child_page', function()
       local block = child_page_module.new(raw)
       local lines = block:format({ indent = 1, indent_size = 2 })
 
-      assert.are.equal('  📄 Nested Page', lines[1])
+      assert.are.equal('  \u{f0f6} Nested Page', lines[1])
     end)
 
     it('should handle empty title with Untitled fallback', function()
@@ -108,7 +108,7 @@ describe('neotion.model.blocks.child_page', function()
       local block = child_page_module.new(raw)
       local lines = block:format()
 
-      assert.are.equal('📄 Untitled', lines[1])
+      assert.are.equal('\u{f0f6} Untitled', lines[1])
     end)
   end)
 
@@ -142,7 +142,7 @@ describe('neotion.model.blocks.child_page', function()
       }
 
       local block = child_page_module.new(raw)
-      block:update_from_lines({ '📄 Different Title' })
+      block:update_from_lines({ '\u{f0f6} Different Title' })
 
       -- Should not crash or change anything
       assert.is_false(block:is_dirty())
@@ -178,7 +178,7 @@ describe('neotion.model.blocks.child_page', function()
 
       local block = child_page_module.new(raw)
 
-      assert.is_true(block:matches_content({ '📄 My Page' }))
+      assert.is_true(block:matches_content({ '\u{f0f6} My Page' }))
     end)
 
     it('should return true with leading whitespace', function()
@@ -192,7 +192,7 @@ describe('neotion.model.blocks.child_page', function()
 
       local block = child_page_module.new(raw)
 
-      assert.is_true(block:matches_content({ '  📄 My Page' }))
+      assert.is_true(block:matches_content({ '  \u{f0f6} My Page' }))
     end)
 
     it('should return false when content does not match', function()
@@ -206,7 +206,7 @@ describe('neotion.model.blocks.child_page', function()
 
       local block = child_page_module.new(raw)
 
-      assert.is_false(block:matches_content({ '📄 Different Page' }))
+      assert.is_false(block:matches_content({ '\u{f0f6} Different Page' }))
     end)
 
     it('should return false for empty lines', function()
@@ -238,7 +238,7 @@ describe('neotion.model.blocks.child_page', function()
 
       -- Create real buffer with child page content
       local bufnr = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '📄 My Page' })
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '\u{f0f6} My Page' })
 
       -- Create mock RenderContext
       local highlight_called = false
@@ -375,6 +375,106 @@ describe('neotion.model.blocks.child_page', function()
   describe('M.is_editable', function()
     it('should return false', function()
       assert.is_false(child_page_module.is_editable())
+    end)
+  end)
+
+  describe('ChildPageBlock:set_icon', function()
+    it('should set custom icon', function()
+      local raw = {
+        id = 'test',
+        type = 'child_page',
+        child_page = { title = 'My Page' },
+      }
+
+      local block = child_page_module.new(raw)
+      block:set_icon('🚀')
+
+      assert.are.equal('🚀', block:get_display_icon())
+    end)
+
+    it('should allow nil to reset to default', function()
+      local raw = {
+        id = 'test',
+        type = 'child_page',
+        child_page = { title = 'My Page' },
+      }
+
+      local block = child_page_module.new(raw)
+      block:set_icon('🚀')
+      block:set_icon(nil)
+
+      -- Should fall back to default
+      assert.are.equal(child_page_module.DEFAULT_ICON, block:get_display_icon())
+    end)
+  end)
+
+  describe('ChildPageBlock:get_display_icon', function()
+    it('should return default icon when no custom icon set', function()
+      local raw = {
+        id = 'test',
+        type = 'child_page',
+        child_page = { title = 'My Page' },
+      }
+
+      local block = child_page_module.new(raw)
+
+      assert.are.equal(child_page_module.DEFAULT_ICON, block:get_display_icon())
+    end)
+
+    it('should return custom icon when set', function()
+      local raw = {
+        id = 'test',
+        type = 'child_page',
+        child_page = { title = 'My Page' },
+      }
+
+      local block = child_page_module.new(raw)
+      block:set_icon('📝')
+
+      assert.are.equal('📝', block:get_display_icon())
+    end)
+  end)
+
+  describe('ChildPageBlock:format with custom icon', function()
+    it('should use custom icon in formatted output', function()
+      local raw = {
+        id = 'test',
+        type = 'child_page',
+        child_page = { title = 'My Page' },
+      }
+
+      local block = child_page_module.new(raw)
+      block:set_icon('🚀')
+      local lines = block:format()
+
+      assert.are.equal('🚀 My Page', lines[1])
+    end)
+
+    it('should use default icon when custom icon not set', function()
+      local raw = {
+        id = 'test',
+        type = 'child_page',
+        child_page = { title = 'My Page' },
+      }
+
+      local block = child_page_module.new(raw)
+      local lines = block:format()
+
+      assert.are.equal('\u{f0f6} My Page', lines[1])
+    end)
+
+    it('should respect indent with custom icon', function()
+      local raw = {
+        id = 'test',
+        type = 'child_page',
+        child_page = { title = 'Nested Page' },
+      }
+
+      local block = child_page_module.new(raw)
+      block:set_icon('🎯')
+      local lines = block:format({ indent = 1, indent_size = 2 })
+
+      assert.are.equal('  🎯 Nested Page', lines[1])
     end)
   end)
 end)

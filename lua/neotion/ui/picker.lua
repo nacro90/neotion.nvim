@@ -3,6 +3,10 @@
 --- Uses Telescope if available, falls back to vim.ui.select.
 ---@brief ]]
 
+-- TODO(neotion:FEAT-12.4:MEDIUM): Preserve cursor position on search refresh
+-- When telescope search results refresh after fetch, keep cursor on the same
+-- page item (match by page_id). Currently cursor jumps to first result.
+
 ---@class neotion.ui.PickerItem
 ---@field id string Page ID
 ---@field title string Page title

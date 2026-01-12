@@ -3,6 +3,10 @@
 ---@class neotion.model.blocks.Code
 local M = {}
 
+-- TODO(neotion:FEAT-12.5:MEDIUM): Conceal code block fence lines
+-- Hide ``` fence lines like render-markdown.nvim does - the fence lines
+-- should be visually hidden but preserved in buffer for editing.
+
 local base = require('neotion.model.block')
 local Block = base.Block
 

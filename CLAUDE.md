@@ -69,6 +69,7 @@ lua/neotion/
 
 ## Dev Rules
 
+- **Dogru mimari oncelikli** - Quick fix yerine proper fix, technical debt birakma
 - **LuaCATS annotations** - Her public fonksiyon icin
 - **Lazy loading** - `require()` fonksiyon icinde
 - **Async by default** - Blocking API cagrisi yapma
@@ -84,6 +85,7 @@ Aktif TODO'lar için: `grep -rn "TODO(neotion:" lua/`
 
 ### Roadmap
 
+- `FEAT-14` - **File block support** (image, video, pdf, file) → [Detay](.claude/docs/FEAT-14-file-blocks.md)
 - `FEAT-9.4` - Link completion `[[`
 - `FEAT-9.5` - Mention completion `@`
 - Tier 1: to_do block

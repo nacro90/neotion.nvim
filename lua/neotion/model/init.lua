@@ -197,6 +197,26 @@ function M.get_block_by_id(bufnr, block_id)
   return mapping.get_block_by_id(bufnr, block_id)
 end
 
+---Deserialize raw pages from database query to DatabaseRow array
+---@param raw_pages table[]|nil Raw Notion API pages from database query
+---@return neotion.DatabaseRow[]
+function M.deserialize_database_rows(raw_pages)
+  local database = require('neotion.model.database')
+  return database.deserialize_database_rows(raw_pages)
+end
+
+---Format database rows to buffer lines
+---@param rows neotion.DatabaseRow[]
+---@return string[]
+function M.format_database_rows(rows)
+  local lines = {}
+  for _, row in ipairs(rows) do
+    local row_lines = row:format()
+    vim.list_extend(lines, row_lines)
+  end
+  return lines
+end
+
 ---Resolve icons for child_page blocks asynchronously
 ---When icons are resolved, updates block and refreshes buffer line
 ---@param bufnr integer

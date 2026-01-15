@@ -1,3 +1,9 @@
+-- TODO(neotion:FEAT-13.7:MEDIUM): Add child_database block model support
+-- Create ChildDatabaseBlock similar to ChildPageBlock with:
+-- - Title display with database icon
+-- - Icon resolution from cache (emoji or placeholder)
+-- - Read-only block (not editable)
+
 ---Child Page Block handler for Neotion
 ---Read-only block representing a sub-page link
 ---@class neotion.model.blocks.ChildPage

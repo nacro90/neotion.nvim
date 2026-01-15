@@ -25,6 +25,8 @@ local type_to_module = {
   code = 'code',
   -- Phase 12: Navigation blocks
   child_page = 'child_page',
+  -- Phase 13: Database blocks
+  child_database = 'child_database',
   -- Phase 9+
   -- to_do = 'todo',
   -- toggle = 'toggle',

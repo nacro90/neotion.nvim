@@ -1,3 +1,44 @@
+-- TODO(neotion:FEAT-13.8:MEDIUM): Toggle checkbox in database view with <CR>
+-- When cursor is on a checkbox column in database view, pressing <CR> should:
+-- - Detect current cell is a checkbox property
+-- - Toggle the value (true <-> false)
+-- - Update via API and refresh display
+-- - Show visual feedback on toggle
+
+-- TODO(neotion:FEAT-13.9:MEDIUM): Date picker UI component
+-- Create a reusable date picker popup for date property editing:
+-- - Calendar view with month/year navigation
+-- - Keyboard navigation (hjkl, arrows)
+-- - Support date-only and date+time modes
+-- - Quick keys: t=today, w=next week, m=next month
+-- - ISO format output for Notion API
+
+-- TODO(neotion:FEAT-13.10:MEDIUM): Edit date property in database view with <CR>
+-- When cursor is on a date column in database view, pressing <CR> should:
+-- - Open the date picker popup (FEAT-13.9)
+-- - Pre-fill with current value if exists
+-- - Update via API on selection
+-- - Support clearing date with <Del> or backspace
+
+-- TODO(neotion:FEAT-13.11:MEDIUM): Edit select/multi-select property in database view with <CR>
+-- When cursor is on a select or multi-select column in database view, pressing <CR> should:
+-- - Open a picker popup with available options from schema
+-- - For select: single choice, closes on selection
+-- - For multi-select: toggle multiple options, confirm with <CR>
+-- - Show current selection highlighted
+-- - Support search/filter within options
+-- - Update via API on confirmation
+
+-- TODO(neotion:FEAT-13.6:LOW): Database row editing support
+-- Phase 13.6: Enable inline editing of database properties:
+-- - Edit text/title properties inline
+-- - Select/multi-select: popup picker for options
+-- - Checkbox: toggle with keybind
+-- - Date: date picker popup or inline parsing
+-- - Number: inline edit with validation
+-- - Create new row with <leader>n
+-- - Delete row with <leader>d (confirm prompt)
+
 --- Notion-faithful editing behavior for neotion.nvim
 --- Provides Enter/Shift+Enter handling with block-aware behavior
 ---@module 'neotion.input.editing'
@@ -75,6 +116,68 @@ local function is_empty_list_item(block_type, line_content)
   return false
 end
 
+---Check if a line is a numbered list item
+---@param line_content string
+---@return boolean
+local function is_numbered_list_line(line_content)
+  return line_content:match('^%s*%d+%.%s') ~= nil
+end
+
+---Get the number from a numbered list line
+---@param line_content string
+---@return integer|nil
+local function get_list_number(line_content)
+  local num = line_content:match('^%s*(%d+)%.')
+  return num and tonumber(num) or nil
+end
+
+---Find the start of a numbered list sequence containing the given line
+---@param bufnr integer
+---@param line integer 1-indexed line number
+---@return integer start_line 1-indexed start of the list sequence
+local function find_list_start(bufnr, line)
+  local start_line = line
+  while start_line > 1 do
+    local prev_content = vim.api.nvim_buf_get_lines(bufnr, start_line - 2, start_line - 1, false)[1]
+    if not prev_content or not is_numbered_list_line(prev_content) then
+      break
+    end
+    start_line = start_line - 1
+  end
+  return start_line
+end
+
+---Renumber a contiguous numbered list sequence starting from given line
+---@param bufnr integer
+---@param start_line integer 1-indexed line to start renumbering from
+local function renumber_list_from_line(bufnr, start_line)
+  local total_lines = vim.api.nvim_buf_line_count(bufnr)
+
+  -- Find the actual start of this list sequence
+  local list_start = find_list_start(bufnr, start_line)
+
+  -- Get the starting number (usually 1, but could continue from previous)
+  local expected_num = 1
+
+  -- Renumber all consecutive numbered list items
+  local current_line = list_start
+  while current_line <= total_lines do
+    local content = vim.api.nvim_buf_get_lines(bufnr, current_line - 1, current_line, false)[1]
+    if not content or not is_numbered_list_line(content) then
+      break
+    end
+
+    -- Replace number with expected number
+    local new_content = content:gsub('^(%s*)%d+(%.%s)', '%1' .. expected_num .. '%2')
+    if new_content ~= content then
+      vim.api.nvim_buf_set_lines(bufnr, current_line - 1, current_line, false, { new_content })
+    end
+
+    expected_num = expected_num + 1
+    current_line = current_line + 1
+  end
+end
+
 ---Detect list type from line content (for orphan lines)
 ---@param line_content string
 ---@return string|nil block_type Detected block type or nil
@@ -133,28 +236,31 @@ function M.handle_enter(bufnr)
       vim.api.nvim_set_current_line('')
       -- Stay in insert mode at beginning of line
       vim.api.nvim_win_set_cursor(0, { vim.api.nvim_win_get_cursor(0)[1], 0 })
+      -- Renumber list after removing item
+      if block_type == 'numbered_list_item' then
+        renumber_list_from_line(bufnr, vim.api.nvim_win_get_cursor(0)[1])
+      end
     else
       -- Non-empty: create new list item
       local prefix = get_list_prefix(block_type, line_content)
+      local col = get_cursor_col()
+      local row = vim.api.nvim_win_get_cursor(0)[1]
+
       if is_at_line_end() then
-        -- At end: simple newline with prefix
-        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<CR>', true, false, true), 'n', false)
-        vim.schedule(function()
-          if prefix then
-            local row = vim.api.nvim_win_get_cursor(0)[1]
-            vim.api.nvim_buf_set_lines(bufnr, row - 1, row, false, { prefix })
-            vim.api.nvim_win_set_cursor(0, { row, #prefix })
-          end
-        end)
+        -- At end: insert new line with prefix after current line
+        vim.api.nvim_buf_set_lines(bufnr, row, row, false, { prefix or '' })
+        vim.api.nvim_win_set_cursor(0, { row + 1, #(prefix or '') })
       else
         -- Mid-line: split and add prefix to new line
-        local col = get_cursor_col()
         local before = line_content:sub(1, col)
         local after = line_content:sub(col + 1)
-        local row = vim.api.nvim_win_get_cursor(0)[1]
 
         vim.api.nvim_buf_set_lines(bufnr, row - 1, row, false, { before, (prefix or '') .. after })
         vim.api.nvim_win_set_cursor(0, { row + 1, #(prefix or '') })
+      end
+      -- Renumber list after adding new item
+      if block_type == 'numbered_list_item' then
+        renumber_list_from_line(bufnr, row)
       end
     end
     return
@@ -201,7 +307,14 @@ function M.handle_o(bufnr)
       local row = vim.api.nvim_win_get_cursor(0)[1]
       vim.api.nvim_buf_set_lines(bufnr, row, row, false, { prefix })
       vim.api.nvim_win_set_cursor(0, { row + 1, #prefix })
-      vim.cmd('startinsert!')
+      -- Renumber list after adding new item
+      if block_type == 'numbered_list_item' then
+        renumber_list_from_line(bufnr, row)
+      end
+      -- Schedule startinsert to ensure it runs after all buffer modifications
+      vim.schedule(function()
+        vim.cmd('startinsert!')
+      end)
       return
     end
   end
@@ -232,7 +345,14 @@ function M.handle_O(bufnr)
       local row = vim.api.nvim_win_get_cursor(0)[1]
       vim.api.nvim_buf_set_lines(bufnr, row - 1, row - 1, false, { prefix })
       vim.api.nvim_win_set_cursor(0, { row, #prefix })
-      vim.cmd('startinsert!')
+      -- Renumber list after adding new item above
+      if block_type == 'numbered_list_item' then
+        renumber_list_from_line(bufnr, row - 1)
+      end
+      -- Schedule startinsert to ensure it runs after all buffer modifications
+      vim.schedule(function()
+        vim.cmd('startinsert!')
+      end)
       return
     end
   end

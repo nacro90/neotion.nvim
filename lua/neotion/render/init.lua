@@ -1,3 +1,14 @@
+-- TODO(neotion:FEAT-13.3:MEDIUM): Database property type rendering
+-- Phase 13.3: Add render support for database properties:
+-- - Title: plain text (clickable to open page)
+-- - Select/Multi-select: colored badges with extmarks
+-- - Date: formatted date string
+-- - Checkbox: [ ] or [x] with highlight
+-- - Number: right-aligned with optional format
+-- - URL: clickable link
+-- - Relation: linked page references
+-- - Formula/Rollup: computed value display
+
 --- Render system for neotion.nvim
 --- Orchestrates inline formatting rendering with anti-conceal support
 ---@module 'neotion.render.init'

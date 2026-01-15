@@ -1,3 +1,10 @@
+-- TODO(neotion:FEAT-13.12:MEDIUM): Navigate to parent page with `-` mapping
+-- Add `-` keymap (like netrw/oil.nvim) to navigate to parent page:
+-- - Get parent_id from current page model
+-- - If parent exists, open parent page
+-- - If no parent (workspace root), show notification
+-- - Implement M.go_parent() function in navigation module
+
 ---Navigation module for link detection and navigation
 ---@class neotion.navigation
 local M = {}
@@ -7,8 +14,9 @@ local log = require('neotion.log').get_logger('navigation')
 ---@class neotion.Link
 ---@field text string Display text of the link
 ---@field url string Raw URL
----@field type 'external'|'notion_page'|'unsupported'|'unknown'
+---@field type 'external'|'notion_page'|'notion_database'|'unsupported'|'unknown'
 ---@field page_id? string Extracted page ID for notion_page type
+---@field database_id? string Extracted database ID for notion_database type
 ---@field reason? string Reason for unsupported links
 ---@field start_col integer 1-indexed start column of link in line
 ---@field end_col integer 1-indexed end column of link in line (after closing paren)
@@ -144,7 +152,7 @@ end
 
 ---Navigate to a link
 ---@param link neotion.Link
----@param opts? {open_page?: fun(page_id: string)}
+---@param opts? {open_page?: fun(page_id: string), open_database?: fun(database_id: string)}
 function M.goto_link(link, opts)
   opts = opts or {}
 
@@ -187,6 +195,19 @@ function M.goto_link(link, opts)
         vim.notify('Cannot open Notion page: neotion.open not available', vim.log.levels.WARN)
       end
     end
+  elseif link.type == 'notion_database' then
+    -- Open Notion database
+    if opts.open_database then
+      opts.open_database(link.database_id)
+    else
+      -- Use neotion.open_database if available
+      local neotion = require('neotion')
+      if neotion.open_database then
+        neotion.open_database(link.database_id)
+      else
+        vim.notify('Cannot open Notion database: neotion.open_database not available', vim.log.levels.WARN)
+      end
+    end
   elseif link.type == 'unsupported' then
     local reason = link.reason or 'Link type not supported'
     vim.notify(reason, vim.log.levels.INFO)
@@ -223,7 +244,51 @@ function M.goto_link_at_cursor(opts)
     return
   end
 
+  -- Check if cursor is on a child_database block
+  local child_database_id = M.get_child_database_at_cursor()
+  if child_database_id then
+    log.debug('Navigating to child database', { database_id = child_database_id })
+    ---@type neotion.Link
+    local synthetic_link = {
+      text = '',
+      url = 'notion://database/' .. child_database_id,
+      type = 'notion_database',
+      database_id = child_database_id,
+      start_col = 1,
+      end_col = 1,
+    }
+    M.goto_link(synthetic_link, opts)
+    return
+  end
+
   vim.notify('No link under cursor', vim.log.levels.INFO)
+end
+
+---Get child database ID if cursor is on a child_database block line
+---@return string|nil database_id
+function M.get_child_database_at_cursor()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local line = cursor[1] -- 1-indexed
+
+  -- Check if this buffer has block mapping
+  local ok, mapping = pcall(require, 'neotion.model.mapping')
+  if not ok then
+    return nil
+  end
+
+  -- Find block at this line
+  local block = mapping.get_block_at_line(bufnr, line)
+  if not block then
+    return nil
+  end
+
+  -- Check if it's a child_database block
+  if block.type == 'child_database' and type(block.get_database_id) == 'function' then
+    return block:get_database_id()
+  end
+
+  return nil
 end
 
 ---Get child page ID if cursor is on a child_page block line

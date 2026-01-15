@@ -3,6 +3,14 @@
 --- Uses Telescope if available, falls back to vim.ui.select.
 ---@brief ]]
 
+-- TODO(neotion:FEAT-13.4:MEDIUM): Database view modes (table/list)
+-- Phase 13.4: Create ui/database_view.lua with:
+-- - Table view: columns aligned with virtual text, scrollable
+-- - List view: compact one-line-per-row format
+-- - View toggle keybind (e.g., <Tab>)
+-- - Column visibility configuration
+-- - Column width auto-calculation or user config
+
 -- TODO(neotion:FEAT-12.4:MEDIUM): Preserve cursor position on search refresh
 -- When telescope search results refresh after fetch, keep cursor on the same
 -- page item (match by page_id). Currently cursor jumps to first result.
@@ -68,9 +76,6 @@ local function format_display(item)
     table.insert(parts, item.icon)
   end
   table.insert(parts, item.title or 'Untitled')
-  if item.parent_type then
-    table.insert(parts, '(' .. format_parent(item.parent_type) .. ')')
-  end
   return table.concat(parts, ' ')
 end
 

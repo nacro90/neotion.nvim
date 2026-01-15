@@ -10,6 +10,7 @@ local log = log_module.get_logger('ui.live_search')
 ---@field id string Page ID (32 hex chars)
 ---@field title string Page title
 ---@field icon string Icon emoji or empty string
+---@field object_type "page"|"database" Object type from Notion API
 ---@field parent_type? string Parent type (workspace, page_id, database_id)
 ---@field parent_id? string Parent ID if applicable
 ---@field frecency_score? number Score from cache (for cached items)
@@ -62,21 +63,47 @@ function M._set_api_searcher(fn)
   mock_api_searcher = fn
 end
 
---- Convert API page to PageItem
+--- Convert API page/database to PageItem
 --- Uses api/pages.lua helper functions for consistent title/icon extraction
----@param page table Notion API page object
+--- Also handles database objects from search results
+---@param page table Notion API page or database object
 ---@return neotion.PageItem
 function M.api_page_to_item(page)
   local pages_api = require('neotion.api.pages')
-  local parent_type, parent_id = pages_api.get_parent(page)
 
   -- Normalize ID (remove dashes) to match cache format for deduplication
   local normalized_id = page.id and page.id:gsub('-', '') or ''
 
+  -- Detect object type (page vs database)
+  local object_type = page.object or 'page'
+
+  -- Extract title - databases have title array directly, pages have properties
+  local title
+  if object_type == 'database' then
+    -- Database title is a rich_text array
+    if page.title and type(page.title) == 'table' then
+      local parts = {}
+      for _, text in ipairs(page.title) do
+        if text.plain_text then
+          table.insert(parts, text.plain_text)
+        end
+      end
+      title = #parts > 0 and table.concat(parts) or 'Untitled Database'
+    else
+      title = 'Untitled Database'
+    end
+  else
+    title = pages_api.get_title(page)
+  end
+
+  -- Extract parent info
+  local parent_type, parent_id = pages_api.get_parent(page)
+
   return {
     id = normalized_id,
-    title = pages_api.get_title(page),
-    icon = pages_api.get_icon(page) or '',
+    title = title,
+    icon = pages_api.get_icon(page) or (object_type == 'database' and '🗃️' or ''),
+    object_type = object_type,
     parent_type = parent_type,
     parent_id = parent_id,
     from_cache = false,
@@ -97,6 +124,7 @@ function M.cached_row_to_item(row)
     id = row.id,
     title = row.title or '',
     icon = icon,
+    object_type = row.object_type or 'page', -- Default to page for backward compatibility
     parent_type = row.parent_type,
     parent_id = row.parent_id,
     frecency_score = row.frecency_score,
@@ -434,7 +462,8 @@ local function start_api_search(state, query)
     return
   end
 
-  local result = pages_api.search_with_cancel(query, handle_response)
+  -- Include databases in search results
+  local result = pages_api.search_with_cancel(query, handle_response, { include_databases = true })
   if result then
     state.request_id = result.request_id
     state.cancel_fn = result.cancel

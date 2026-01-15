@@ -26,8 +26,10 @@ local PREFIX_PATTERNS = {
   { pattern = '^(%- )', prefix = '- ', type = 'bulleted_list_item' },
   { pattern = '^(%* )', prefix = '* ', type = 'bulleted_list_item' },
   { pattern = '^(%+ )', prefix = '+ ', type = 'bulleted_list_item' },
-  -- Quote pattern (only pipe, > is reserved for toggle)
+  -- Quote pattern (pipe for quote)
   { pattern = '^(| )', prefix = '| ', type = 'quote' },
+  -- Toggle pattern (> prefix)
+  { pattern = '^(> )', prefix = '> ', type = 'toggle' },
 }
 
 ---@type table<string, string>
@@ -40,6 +42,7 @@ local TYPE_TO_PREFIX = {
   bulleted_list_item = '- ',
   numbered_list_item = '1. ',
   quote = '| ',
+  toggle = '> ',
 }
 
 --- Detect block type from line content

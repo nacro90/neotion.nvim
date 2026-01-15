@@ -178,14 +178,16 @@ local function renumber_list_from_line(bufnr, start_line)
   end
 end
 
----Detect list type from line content (for orphan lines)
+---Detect block type from line content (for orphan lines)
 ---@param line_content string
 ---@return string|nil block_type Detected block type or nil
-local function detect_list_type_from_content(line_content)
+local function detect_block_type_from_content(line_content)
   if line_content:match('^%s*[%-%*%+]%s') then
     return 'bulleted_list_item'
   elseif line_content:match('^%s*%d+%.%s') then
     return 'numbered_list_item'
+  elseif line_content:match('^> ') then
+    return 'toggle'
   end
   return nil
 end
@@ -221,9 +223,9 @@ function M.handle_enter(bufnr)
     block_type = block:get_type()
   else
     -- Orphan line: detect type from content
-    block_type = detect_list_type_from_content(line_content)
+    block_type = detect_block_type_from_content(line_content)
     if not block_type then
-      -- Not a list: split orphan line at cursor (Bug 11.2)
+      -- Not a recognized type: split orphan line at cursor (Bug 11.2)
       split_orphan_at_cursor(bufnr)
       return
     end
@@ -272,6 +274,27 @@ function M.handle_enter(bufnr)
     return
   end
 
+  -- Toggle: create indented child block
+  if block_type == 'toggle' then
+    local col = get_cursor_col()
+    local row = vim.api.nvim_win_get_cursor(0)[1]
+    local indent = '  ' -- 2-space indent for child
+
+    if is_at_line_end() then
+      -- At end: insert indented empty line
+      vim.api.nvim_buf_set_lines(bufnr, row, row, false, { indent })
+      vim.api.nvim_win_set_cursor(0, { row + 1, #indent })
+    else
+      -- Mid-line: split and move remainder to indented child
+      local before = line_content:sub(1, col)
+      local after = line_content:sub(col + 1)
+
+      vim.api.nvim_buf_set_lines(bufnr, row - 1, row, false, { before, indent .. after })
+      vim.api.nvim_win_set_cursor(0, { row + 1, #indent })
+    end
+    return
+  end
+
   -- Paragraph, Heading, and others: standard newline
   -- The sync layer will interpret this as new block
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<CR>', true, false, true), 'n', false)
@@ -297,7 +320,7 @@ function M.handle_o(bufnr)
   if block then
     block_type = block:get_type()
   else
-    block_type = detect_list_type_from_content(line_content)
+    block_type = detect_block_type_from_content(line_content)
   end
 
   -- List items: add prefix to new line
@@ -319,6 +342,18 @@ function M.handle_o(bufnr)
     end
   end
 
+  -- Toggle: create indented child line below
+  if block_type == 'toggle' then
+    local row = vim.api.nvim_win_get_cursor(0)[1]
+    local indent = '  ' -- 2-space indent for child
+    vim.api.nvim_buf_set_lines(bufnr, row, row, false, { indent })
+    vim.api.nvim_win_set_cursor(0, { row + 1, #indent })
+    vim.schedule(function()
+      vim.cmd('startinsert!')
+    end)
+    return
+  end
+
   -- Default: standard 'o' behavior
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('o', true, false, true), 'n', false)
 end
@@ -335,7 +370,7 @@ function M.handle_O(bufnr)
   if block then
     block_type = block:get_type()
   else
-    block_type = detect_list_type_from_content(line_content)
+    block_type = detect_block_type_from_content(line_content)
   end
 
   -- List items: add prefix to new line above

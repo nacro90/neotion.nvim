@@ -479,6 +479,137 @@ describe('neotion.input.editing with mock blocks', function()
     end)
   end)
 
+  describe('toggle Enter handling', function()
+    it('should create indented child line on toggle block', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '> Toggle content' })
+      vim.api.nvim_win_set_cursor(0, { 1, 16 }) -- end of line
+
+      mapping.get_block_at_line = function()
+        return create_mock_block('toggle', 'Toggle content')
+      end
+
+      editing.handle_enter(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal(2, #lines, 'Should have 2 lines')
+      assert.are.equal('> Toggle content', lines[1], 'Toggle line should remain')
+      assert.are.equal('  ', lines[2], 'New line should be indented (child)')
+    end)
+
+    it('should position cursor at end of indent on new child line', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '> Toggle' })
+      vim.api.nvim_win_set_cursor(0, { 1, 8 })
+
+      mapping.get_block_at_line = function()
+        return create_mock_block('toggle', 'Toggle')
+      end
+
+      editing.handle_enter(bufnr)
+
+      local cursor = vim.api.nvim_win_get_cursor(0)
+      assert.are.equal(2, cursor[1], 'Cursor should be on line 2')
+      assert.are.equal(2, cursor[2], 'Cursor should be after indent')
+    end)
+
+    it('should handle empty toggle (just prefix)', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '> ' })
+      vim.api.nvim_win_set_cursor(0, { 1, 2 })
+
+      mapping.get_block_at_line = function()
+        return create_mock_block('toggle', '')
+      end
+
+      editing.handle_enter(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal(2, #lines)
+      assert.are.equal('> ', lines[1])
+      assert.are.equal('  ', lines[2], 'Should create indented child')
+    end)
+
+    it('should split toggle content at cursor mid-line', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '> hello world' })
+      vim.api.nvim_win_set_cursor(0, { 1, 8 }) -- after "> hello "
+
+      mapping.get_block_at_line = function()
+        return create_mock_block('toggle', 'hello world')
+      end
+
+      editing.handle_enter(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal(2, #lines)
+      assert.are.equal('> hello ', lines[1], 'Toggle should keep text before cursor')
+      assert.are.equal('  world', lines[2], 'Child should have text after cursor with indent')
+    end)
+  end)
+
+  describe('toggle o/O handling', function()
+    it('should create indented child line with o on toggle', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '> Toggle' })
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+      mapping.get_block_at_line = function()
+        return create_mock_block('toggle', 'Toggle')
+      end
+
+      editing.handle_o(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal(2, #lines)
+      assert.are.equal('> Toggle', lines[1])
+      assert.are.equal('  ', lines[2], 'New line should be indented child')
+    end)
+
+    it('should do standard O behavior on toggle (above toggle)', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '> Toggle' })
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+      mapping.get_block_at_line = function()
+        return create_mock_block('toggle', 'Toggle')
+      end
+
+      -- O on toggle should NOT create child above - just standard behavior
+      assert.has_no.errors(function()
+        editing.handle_O(bufnr)
+      end)
+    end)
+  end)
+
+  describe('orphan toggle Enter handling', function()
+    it('should create indented child on orphan toggle line', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '> orphan toggle' })
+      vim.api.nvim_win_set_cursor(0, { 1, 15 }) -- end of line
+
+      mapping.get_block_at_line = function()
+        return nil -- orphan line
+      end
+
+      editing.handle_enter(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal(2, #lines)
+      assert.are.equal('> orphan toggle', lines[1])
+      assert.are.equal('  ', lines[2], 'Should create indented child')
+    end)
+
+    it('should split orphan toggle at cursor mid-line', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '> hello world' })
+      vim.api.nvim_win_set_cursor(0, { 1, 8 }) -- after "> hello "
+
+      mapping.get_block_at_line = function()
+        return nil
+      end
+
+      editing.handle_enter(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal(2, #lines)
+      assert.are.equal('> hello ', lines[1])
+      assert.are.equal('  world', lines[2], 'Child should have text with indent')
+    end)
+  end)
+
   describe('orphan line Enter handling (content-based detection)', function()
     it('should continue bullet list on orphan line with bullet prefix', function()
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '- orphan item' })

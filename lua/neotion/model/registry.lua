@@ -27,9 +27,10 @@ local type_to_module = {
   child_page = 'child_page',
   -- Phase 13: Database blocks
   child_database = 'child_database',
-  -- Phase 9+
+  -- Toggle block (MVP: content only, children deferred)
+  toggle = 'toggle',
+  -- Phase 9+ (future)
   -- to_do = 'todo',
-  -- toggle = 'toggle',
   -- callout = 'callout',
 }
 

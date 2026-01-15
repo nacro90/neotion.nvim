@@ -308,4 +308,67 @@ describe('neotion.model', function()
       end)
     end)
   end)
+
+  describe('deserialize_database_rows', function()
+    it('should convert raw pages to DatabaseRow array', function()
+      local raw_pages = {
+        {
+          id = 'page-1',
+          properties = {
+            Name = { type = 'title', title = { { plain_text = 'Row 1' } } },
+          },
+        },
+        {
+          id = 'page-2',
+          properties = {
+            Name = { type = 'title', title = { { plain_text = 'Row 2' } } },
+          },
+        },
+      }
+
+      local rows = model.deserialize_database_rows(raw_pages)
+
+      assert.are.equal(2, #rows)
+      assert.are.equal('page-1', rows[1].id)
+      assert.are.equal('Row 1', rows[1]:get_title())
+    end)
+
+    it('should return empty array for nil input', function()
+      local rows = model.deserialize_database_rows(nil)
+
+      assert.are.equal(0, #rows)
+    end)
+  end)
+
+  describe('format_database_rows', function()
+    it('should format rows to buffer lines', function()
+      local raw_pages = {
+        {
+          id = 'page-1',
+          properties = {
+            Name = { type = 'title', title = { { plain_text = 'Task 1' } } },
+          },
+        },
+        {
+          id = 'page-2',
+          properties = {
+            Name = { type = 'title', title = { { plain_text = 'Task 2' } } },
+          },
+        },
+      }
+      local rows = model.deserialize_database_rows(raw_pages)
+
+      local lines = model.format_database_rows(rows)
+
+      assert.are.equal(2, #lines)
+      assert.are.equal('Task 1', lines[1])
+      assert.are.equal('Task 2', lines[2])
+    end)
+
+    it('should return empty array for empty rows', function()
+      local lines = model.format_database_rows({})
+
+      assert.are.equal(0, #lines)
+    end)
+  end)
 end)

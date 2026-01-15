@@ -5,7 +5,7 @@ local M = {}
 
 --- Current schema version
 --- Increment this when making schema changes
-M.VERSION = 2
+M.VERSION = 3
 
 --- Table creation statements
 M.TABLES = {
@@ -22,6 +22,7 @@ M.TABLES = {
       title TEXT NOT NULL,
       icon TEXT,
       icon_type TEXT,
+      object_type TEXT DEFAULT 'page',
       parent_type TEXT,
       parent_id TEXT,
       last_edited_time INTEGER NOT NULL,
@@ -146,6 +147,11 @@ local MIGRATIONS = {
       )
     ]],
     'CREATE INDEX IF NOT EXISTS idx_query_cache_cached_at ON query_cache(cached_at ASC)',
+  },
+  -- Version 3: Add object_type column to pages table (for page vs database distinction)
+  [3] = {
+    [[ALTER TABLE pages ADD COLUMN object_type TEXT DEFAULT 'page']],
+    'CREATE INDEX IF NOT EXISTS idx_pages_object_type ON pages(object_type)',
   },
 }
 

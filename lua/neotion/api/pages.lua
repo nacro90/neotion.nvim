@@ -52,12 +52,18 @@ function M.get(page_id, callback)
   end)
 end
 
----Search for pages accessible by the integration
+---@class neotion.api.SearchOpts
+---@field include_databases? boolean Include databases in search results (default: false)
+
+---Search for pages (and optionally databases) accessible by the integration
 ---@param query? string Search query (optional)
 ---@param callback fun(result: neotion.api.PageListResult)
-function M.search(query, callback)
+---@param opts? neotion.api.SearchOpts Search options
+function M.search(query, callback, opts)
   local auth = require('neotion.api.auth')
   local throttle = require('neotion.api.throttle')
+
+  opts = opts or {}
 
   local token_result = auth.get_token()
   if not token_result.token then
@@ -66,9 +72,13 @@ function M.search(query, callback)
   end
 
   local body = {
-    filter = { property = 'object', value = 'page' },
     page_size = 100,
   }
+
+  -- Only filter by object type if we don't want databases
+  if not opts.include_databases then
+    body.filter = { property = 'object', value = 'page' }
+  end
 
   if query and query ~= '' then
     body.query = query
@@ -101,10 +111,13 @@ end
 ---Search for pages with cancellation support (for live search)
 ---@param query? string Search query (optional)
 ---@param callback fun(result: neotion.api.PageListResult)
+---@param opts? neotion.api.SearchOpts Search options
 ---@return neotion.api.SearchHandle|nil handle Request handle with cancel function, or nil if auth failed
-function M.search_with_cancel(query, callback)
+function M.search_with_cancel(query, callback, opts)
   local auth = require('neotion.api.auth')
   local throttle = require('neotion.api.throttle')
+
+  opts = opts or {}
 
   local token_result = auth.get_token()
   if not token_result.token then
@@ -116,9 +129,13 @@ function M.search_with_cancel(query, callback)
   end
 
   local body = {
-    filter = { property = 'object', value = 'page' },
     page_size = 100,
   }
+
+  -- Only filter by object type if we don't want databases
+  if not opts.include_databases then
+    body.filter = { property = 'object', value = 'page' }
+  end
 
   if query and query ~= '' then
     body.query = query

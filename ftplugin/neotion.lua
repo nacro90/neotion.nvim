@@ -37,11 +37,12 @@ local function setup_keymaps()
   if keymaps.enter_follows_link then
     vim.keymap.set('n', '<CR>', function()
       local navigation = require('neotion.navigation')
-      -- Check if there's a link or child_page at cursor
+      -- Check if there's a link, child_page, or child_database at cursor
       local link = navigation.get_link_at_cursor()
       local child_page_id = navigation.get_child_page_at_cursor()
+      local child_database_id = navigation.get_child_database_at_cursor()
 
-      if link or child_page_id then
+      if link or child_page_id or child_database_id then
         -- Follow the link
         vim.cmd('normal! ' .. vim.api.nvim_replace_termcodes('<Plug>(NeotionGotoLink)', true, true, true))
       else

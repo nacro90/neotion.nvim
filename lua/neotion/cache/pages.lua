@@ -377,6 +377,24 @@ end
 --- Save multiple pages in a single transaction (for search results)
 --- Does NOT increment open_count - these are just API results being cached
 ---@param pages table[] Array of Notion page objects from API
+--- Extract title from database object (databases have different structure than pages)
+---@param db_obj table Notion database object
+---@return string
+local function extract_database_title(db_obj)
+  if not db_obj.title then
+    return 'Untitled Database'
+  end
+
+  local parts = {}
+  for _, text in ipairs(db_obj.title) do
+    if text.plain_text then
+      table.insert(parts, text.plain_text)
+    end
+  end
+
+  return #parts > 0 and table.concat(parts) or 'Untitled Database'
+end
+
 ---@return integer count Number of pages saved
 function M.save_pages_batch(pages)
   local db = get_db()
@@ -396,7 +414,17 @@ function M.save_pages_batch(pages)
     for _, page in ipairs(pages) do
       local page_id = page.id and page.id:gsub('-', '')
       if page_id then
-        local title = pages_api.get_title(page)
+        -- Detect object type (page vs database)
+        local object_type = page.object or 'page'
+
+        -- Extract title - databases have different structure than pages
+        local title
+        if object_type == 'database' then
+          title = extract_database_title(page)
+        else
+          title = pages_api.get_title(page)
+        end
+
         local parent_type, parent_id = pages_api.get_parent(page)
         local icon = pages_api.get_icon(page)
         local icon_type = (page.icon and type(page.icon) == 'table') and page.icon.type or nil
@@ -425,12 +453,13 @@ function M.save_pages_batch(pages)
         -- Use INSERT ... ON CONFLICT to avoid triggering CASCADE delete on page_content
         local sql = [[
           INSERT INTO pages
-          (id, title, icon, icon_type, parent_type, parent_id, last_edited_time, created_time, cached_at, last_opened_at, open_count, is_deleted)
-          VALUES (:id, :title, :icon, :icon_type, :parent_type, :parent_id, :last_edited_time, :created_time, :cached_at, NULL, 0, 0)
+          (id, title, icon, icon_type, object_type, parent_type, parent_id, last_edited_time, created_time, cached_at, last_opened_at, open_count, is_deleted)
+          VALUES (:id, :title, :icon, :icon_type, :object_type, :parent_type, :parent_id, :last_edited_time, :created_time, :cached_at, NULL, 0, 0)
           ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             icon = excluded.icon,
             icon_type = excluded.icon_type,
+            object_type = excluded.object_type,
             parent_type = excluded.parent_type,
             parent_id = excluded.parent_id,
             last_edited_time = excluded.last_edited_time,
@@ -445,6 +474,7 @@ function M.save_pages_batch(pages)
             title = title,
             icon = icon,
             icon_type = icon_type,
+            object_type = object_type,
             parent_type = parent_type,
             parent_id = parent_id,
             last_edited_time = last_edited_time,
@@ -460,7 +490,7 @@ function M.save_pages_batch(pages)
   end)
 
   if success then
-    log.info('Batch saved pages', { count = count })
+    log.info('Batch saved pages/databases', { count = count })
   end
   return count
 end

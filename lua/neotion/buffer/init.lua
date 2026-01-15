@@ -3,15 +3,19 @@
 local M = {}
 
 ---@alias neotion.BufferStatus 'loading'|'ready'|'modified'|'syncing'|'error'
+---@alias neotion.BufferType 'page'|'database'
 
 ---@class neotion.BufferData
----@field page_id string
+---@field buffer_type neotion.BufferType Type of buffer ('page' or 'database')
+---@field page_id string Page ID (for page buffers)
 ---@field page_title string
 ---@field parent_type string
 ---@field parent_id string|nil
 ---@field last_sync string|nil ISO timestamp
 ---@field status neotion.BufferStatus Current buffer state
 ---@field header_line_count integer|nil Number of header lines (for block mapping)
+---@field database_id string|nil Database ID (for database buffers)
+---@field database_view neotion.DatabaseView|nil Database view model (for database buffers)
 
 -- Store buffer metadata
 ---@type table<integer, neotion.BufferData>
@@ -50,13 +54,14 @@ function M.create(page_id)
   vim.bo[bufnr].filetype = 'neotion'
   vim.bo[bufnr].modifiable = true -- Allow editing (read-only blocks protected by autocmd)
 
-  -- Set buffer name
+  -- Set buffer name (p/ prefix to distinguish from database buffers)
   local normalized_id = page_id:gsub('-', '')
   local short_id = normalized_id:sub(1, 8)
-  vim.api.nvim_buf_set_name(bufnr, 'neotion://' .. short_id)
+  vim.api.nvim_buf_set_name(bufnr, 'neotion://p/' .. short_id)
 
   -- Initialize buffer data
   buffer_data[bufnr] = {
+    buffer_type = 'page',
     page_id = normalized_id,
     page_title = 'Loading...',
     parent_type = 'unknown',
@@ -85,11 +90,107 @@ end
 function M.find_by_page_id(page_id)
   local normalized_id = page_id:gsub('-', '')
   for bufnr, data in pairs(buffer_data) do
-    if data.page_id == normalized_id and vim.api.nvim_buf_is_valid(bufnr) then
+    if data.buffer_type == 'page' and data.page_id == normalized_id and vim.api.nvim_buf_is_valid(bufnr) then
       return bufnr
     end
   end
   return nil
+end
+
+---Create or get buffer for a database
+---@param database_id string
+---@return integer bufnr
+---@return boolean is_new True if buffer was newly created
+function M.create_database(database_id)
+  -- Check if buffer already exists
+  local existing = M.find_by_database_id(database_id)
+  if existing then
+    return existing, false
+  end
+
+  -- Create new buffer
+  local bufnr = vim.api.nvim_create_buf(true, false)
+
+  -- Set buffer options - database buffers are read-only
+  vim.bo[bufnr].buftype = 'nofile'
+  vim.bo[bufnr].filetype = 'neotion'
+  vim.bo[bufnr].modifiable = false
+  vim.bo[bufnr].swapfile = false
+
+  -- Set buffer name
+  local normalized_id = database_id:gsub('-', '')
+  local short_id = normalized_id:sub(1, 8)
+  vim.api.nvim_buf_set_name(bufnr, 'neotion://d/' .. short_id)
+
+  -- Initialize buffer data
+  buffer_data[bufnr] = {
+    buffer_type = 'database',
+    database_id = normalized_id,
+    page_id = normalized_id, -- For compatibility with existing code
+    page_title = 'Loading...',
+    parent_type = 'unknown',
+    parent_id = nil,
+    last_sync = nil,
+    status = 'loading',
+    database_view = nil,
+  }
+
+  -- Set up autocmd for buffer deletion
+  vim.api.nvim_create_autocmd('BufDelete', {
+    buffer = bufnr,
+    callback = function()
+      buffer_data[bufnr] = nil
+    end,
+  })
+
+  return bufnr, true
+end
+
+---Find buffer by database ID
+---@param database_id string
+---@return integer|nil bufnr
+function M.find_by_database_id(database_id)
+  local normalized_id = database_id:gsub('-', '')
+  for bufnr, data in pairs(buffer_data) do
+    if data.buffer_type == 'database' and data.database_id == normalized_id and vim.api.nvim_buf_is_valid(bufnr) then
+      return bufnr
+    end
+  end
+  return nil
+end
+
+---Check if buffer is a database buffer
+---@param bufnr? integer
+---@return boolean
+function M.is_database_buffer(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  local data = buffer_data[bufnr]
+  return data ~= nil and data.buffer_type == 'database'
+end
+
+---Set database buffer content (for database views)
+---@param bufnr integer
+---@param lines string[]
+---@param database_view neotion.DatabaseView
+function M.set_database_content(bufnr, lines, database_view)
+  -- Temporarily allow modification to set content
+  vim.api.nvim_set_option_value('modifiable', true, { buf = bufnr })
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+  vim.api.nvim_set_option_value('modifiable', false, { buf = bufnr })
+  vim.api.nvim_set_option_value('modified', false, { buf = bufnr })
+
+  -- Store database view in buffer data
+  if buffer_data[bufnr] then
+    buffer_data[bufnr].database_view = database_view
+  end
+end
+
+---Get database view for a buffer
+---@param bufnr integer
+---@return neotion.DatabaseView|nil
+function M.get_database_view(bufnr)
+  local data = buffer_data[bufnr]
+  return data and data.database_view
 end
 
 ---Get buffer data
@@ -113,9 +214,10 @@ function M.update_data(bufnr, updates)
   -- Update buffer name if title changed
   if updates.page_title then
     local data = buffer_data[bufnr]
-    local short_id = data.page_id:sub(1, 8)
+    local short_id = (data.database_id or data.page_id):sub(1, 8)
     local safe_title = updates.page_title:gsub('[/\\]', '_'):sub(1, 30)
-    vim.api.nvim_buf_set_name(bufnr, 'neotion://' .. short_id .. ' ' .. safe_title)
+    local prefix = data.buffer_type == 'database' and 'd' or 'p'
+    vim.api.nvim_buf_set_name(bufnr, 'neotion://' .. prefix .. '/' .. short_id .. ' ' .. safe_title)
   end
 end
 

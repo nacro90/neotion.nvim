@@ -448,7 +448,370 @@ function M.goto_link()
     open_page = function(page_id)
       M.open(page_id)
     end,
+    open_database = function(database_id)
+      M.open_database(database_id)
+    end,
   })
+end
+
+---Open a database and show its rows in a picker
+---@param database_id string Database ID
+function M.open_database(database_id)
+  vim.validate({ database_id = { database_id, 'string' } })
+  local normalized = database_id:gsub('-', '')
+  if #normalized ~= 32 or not normalized:match('^%x+$') then
+    vim.notify('[neotion] Invalid database ID format', vim.log.levels.ERROR)
+    return
+  end
+
+  local buffer = require('neotion.buffer')
+  local databases_api = require('neotion.api.databases')
+  local DatabaseView = require('neotion.model.database_view').DatabaseView
+  local database_renderer = require('neotion.render.database')
+
+  -- Setup highlight groups
+  database_renderer.setup_highlights()
+
+  -- Create or get existing database buffer
+  local bufnr, is_new = buffer.create_database(database_id)
+
+  -- Open buffer in current window
+  buffer.open(bufnr)
+
+  -- If buffer already exists and has content, just show it
+  if not is_new then
+    return
+  end
+
+  -- Set loading indicator
+  vim.api.nvim_set_option_value('modifiable', true, { buf = bufnr })
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'Loading database...' })
+  vim.api.nvim_set_option_value('modifiable', false, { buf = bufnr })
+
+  -- Fetch database schema first
+  databases_api.get(database_id, function(schema_result)
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+      return
+    end
+
+    if schema_result.error then
+      buffer.set_status(bufnr, 'error')
+      vim.schedule(function()
+        vim.api.nvim_set_option_value('modifiable', true, { buf = bufnr })
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+          'Error loading database:',
+          schema_result.error,
+        })
+        vim.api.nvim_set_option_value('modifiable', false, { buf = bufnr })
+      end)
+      return
+    end
+
+    local database = schema_result.database
+
+    -- Query rows
+    databases_api.query(database_id, { page_size = 50 }, function(query_result)
+      if not vim.api.nvim_buf_is_valid(bufnr) then
+        return
+      end
+
+      vim.schedule(function()
+        if query_result.error then
+          buffer.set_status(bufnr, 'error')
+          vim.api.nvim_set_option_value('modifiable', true, { buf = bufnr })
+          vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+            'Error querying database:',
+            query_result.error,
+          })
+          vim.api.nvim_set_option_value('modifiable', false, { buf = bufnr })
+          return
+        end
+
+        -- Create database view (API returns 'pages' not 'results')
+        local database_view = DatabaseView.new(database, query_result.pages, query_result)
+
+        -- Format and set content
+        local lines = database_view:format()
+        buffer.set_database_content(bufnr, lines, database_view)
+
+        -- Apply rendering (highlights, extmarks)
+        database_renderer.render(bufnr, database_view)
+
+        -- Update buffer data
+        buffer.update_data(bufnr, {
+          page_title = database_view.title,
+          last_sync = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+        })
+        buffer.set_status(bufnr, 'ready')
+
+        -- Setup keymaps for database buffer
+        M._setup_database_keymaps(bufnr, database_id)
+      end)
+    end)
+  end)
+end
+
+---Setup keymaps for database buffer
+---@param bufnr integer
+---@param database_id string
+function M._setup_database_keymaps(bufnr, database_id)
+  local buffer = require('neotion.buffer')
+  local filter = require('neotion.ui.filter')
+  local sort = require('neotion.ui.sort')
+
+  local function map(mode, lhs, rhs, desc)
+    vim.keymap.set(mode, lhs, rhs, { buffer = bufnr, desc = desc })
+  end
+
+  -- Enter: Open row as page
+  map('n', '<CR>', function()
+    local database_view = buffer.get_database_view(bufnr)
+    if not database_view then
+      return
+    end
+
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    local row = database_view:get_row_at_line(cursor[1])
+    if row and row.id then
+      M.open(row.id)
+    end
+  end, 'Open row as page')
+
+  -- gf: Same as Enter (for consistency)
+  map('n', 'gf', function()
+    local database_view = buffer.get_database_view(bufnr)
+    if not database_view then
+      return
+    end
+
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    local row = database_view:get_row_at_line(cursor[1])
+    if row and row.id then
+      M.open(row.id)
+    end
+  end, 'Open row as page')
+
+  -- f: Filter
+  map('n', 'f', function()
+    local database_view = buffer.get_database_view(bufnr)
+    if not database_view then
+      return
+    end
+
+    -- Initialize filter state if needed
+    if not database_view.filter_state then
+      database_view.filter_state = filter.create_state()
+    end
+
+    filter.show_popup(database_view.schema, database_view.filter_state, function()
+      -- Re-query with new filter
+      M._refresh_database(bufnr, database_id)
+    end)
+  end, 'Filter database')
+
+  -- s: Sort
+  map('n', 's', function()
+    local database_view = buffer.get_database_view(bufnr)
+    if not database_view then
+      return
+    end
+
+    -- Initialize sort state if needed
+    if not database_view.sort_state then
+      database_view.sort_state = sort.create_state()
+    end
+
+    sort.show_popup(database_view.schema, database_view.sort_state, function()
+      -- Re-query with new sort
+      M._refresh_database(bufnr, database_id)
+    end)
+  end, 'Sort database')
+
+  -- F: Clear filters
+  map('n', 'F', function()
+    local database_view = buffer.get_database_view(bufnr)
+    if database_view and database_view.filter_state then
+      filter.clear_filters(database_view.filter_state)
+      M._refresh_database(bufnr, database_id)
+    end
+  end, 'Clear filters')
+
+  -- S: Clear sorts
+  map('n', 'S', function()
+    local database_view = buffer.get_database_view(bufnr)
+    if database_view and database_view.sort_state then
+      sort.clear_sorts(database_view.sort_state)
+      M._refresh_database(bufnr, database_id)
+    end
+  end, 'Clear sorts')
+
+  -- r: Refresh
+  map('n', 'r', function()
+    M._refresh_database(bufnr, database_id)
+  end, 'Refresh database')
+
+  -- L: Load more (if pagination)
+  map('n', 'L', function()
+    M._load_more_rows(bufnr, database_id)
+  end, 'Load more rows')
+
+  -- q: Close buffer
+  map('n', 'q', function()
+    vim.api.nvim_buf_delete(bufnr, { force = false })
+  end, 'Close database')
+
+  -- ?: Help
+  map('n', '?', function()
+    vim.notify(
+      table.concat({
+        'Database Buffer Keymaps:',
+        '  <CR>, gf  Open row as page',
+        '  f         Filter database',
+        '  s         Sort database',
+        '  F         Clear filters',
+        '  S         Clear sorts',
+        '  r         Refresh',
+        '  L         Load more rows',
+        '  q         Close buffer',
+      }, '\n'),
+      vim.log.levels.INFO
+    )
+  end, 'Show help')
+end
+
+---Refresh database content with current filter/sort
+---@param bufnr integer
+---@param database_id string
+function M._refresh_database(bufnr, database_id)
+  local buffer = require('neotion.buffer')
+  local databases_api = require('neotion.api.databases')
+  local filter = require('neotion.ui.filter')
+  local sort = require('neotion.ui.sort')
+  local database_renderer = require('neotion.render.database')
+  local DatabaseView = require('neotion.model.database_view').DatabaseView
+
+  local database_view = buffer.get_database_view(bufnr)
+  if not database_view then
+    return
+  end
+
+  buffer.set_status(bufnr, 'loading')
+
+  -- Build query options
+  local query_opts = { page_size = 50 }
+  if database_view.filter_state then
+    query_opts.filter = filter.build_api_filter(database_view.filter_state)
+  end
+  if database_view.sort_state then
+    query_opts.sorts = sort.build_api_sorts(database_view.sort_state)
+  end
+
+  -- Re-fetch schema (in case it changed) and query
+  databases_api.get(database_id, function(schema_result)
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+      return
+    end
+
+    if schema_result.error then
+      buffer.set_status(bufnr, 'error')
+      vim.notify('[neotion] ' .. schema_result.error, vim.log.levels.ERROR)
+      return
+    end
+
+    databases_api.query(database_id, query_opts, function(query_result)
+      if not vim.api.nvim_buf_is_valid(bufnr) then
+        return
+      end
+
+      vim.schedule(function()
+        if query_result.error then
+          buffer.set_status(bufnr, 'error')
+          vim.notify('[neotion] ' .. query_result.error, vim.log.levels.ERROR)
+          return
+        end
+
+        -- Create new database view (preserving filter/sort state)
+        local old_filter_state = database_view.filter_state
+        local old_sort_state = database_view.sort_state
+
+        local new_view = DatabaseView.new(schema_result.database, query_result.pages, query_result)
+        new_view.filter_state = old_filter_state
+        new_view.sort_state = old_sort_state
+
+        -- Format and set content
+        local lines = new_view:format()
+        buffer.set_database_content(bufnr, lines, new_view)
+
+        -- Apply rendering
+        database_renderer.render(bufnr, new_view)
+
+        -- Update buffer data
+        buffer.update_data(bufnr, {
+          page_title = new_view.title,
+          last_sync = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+        })
+        buffer.set_status(bufnr, 'ready')
+      end)
+    end)
+  end)
+end
+
+---Load more rows for pagination
+---@param bufnr integer
+---@param database_id string
+function M._load_more_rows(bufnr, database_id)
+  local buffer = require('neotion.buffer')
+  local databases_api = require('neotion.api.databases')
+  local filter = require('neotion.ui.filter')
+  local sort = require('neotion.ui.sort')
+  local database_renderer = require('neotion.render.database')
+
+  local database_view = buffer.get_database_view(bufnr)
+  if not database_view or not database_view.has_more then
+    vim.notify('[neotion] No more rows to load', vim.log.levels.INFO)
+    return
+  end
+
+  buffer.set_status(bufnr, 'loading')
+
+  -- Build query options with cursor
+  local query_opts = {
+    page_size = 50,
+    start_cursor = database_view.next_cursor,
+  }
+  if database_view.filter_state then
+    query_opts.filter = filter.build_api_filter(database_view.filter_state)
+  end
+  if database_view.sort_state then
+    query_opts.sorts = sort.build_api_sorts(database_view.sort_state)
+  end
+
+  databases_api.query(database_id, query_opts, function(query_result)
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+      return
+    end
+
+    vim.schedule(function()
+      if query_result.error then
+        buffer.set_status(bufnr, 'error')
+        vim.notify('[neotion] ' .. query_result.error, vim.log.levels.ERROR)
+        return
+      end
+
+      -- Append rows to view
+      database_view:append_rows(query_result.pages, query_result)
+
+      -- Re-format and set content
+      local lines = database_view:format()
+      buffer.set_database_content(bufnr, lines, database_view)
+
+      -- Apply rendering
+      database_renderer.render(bufnr, database_view)
+
+      buffer.set_status(bufnr, 'ready')
+      vim.notify('[neotion] Loaded ' .. #query_result.pages .. ' more rows', vim.log.levels.INFO)
+    end)
+  end)
 end
 
 ---Search Notion pages
@@ -458,7 +821,12 @@ function M.search(query)
 
   picker.search(query, function(item)
     if item then
-      M.open(item.id)
+      -- Check if selected item is a database
+      if item.object_type == 'database' then
+        M.open_database(item.id)
+      else
+        M.open(item.id)
+      end
     end
   end)
 end

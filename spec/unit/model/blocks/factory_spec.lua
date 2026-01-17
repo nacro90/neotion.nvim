@@ -6,8 +6,96 @@ describe('neotion.model.blocks.factory', function()
     package.loaded['neotion.model.blocks.factory'] = nil
     package.loaded['neotion.model.blocks.detection'] = nil
     package.loaded['neotion.model.registry'] = nil
+    package.loaded['neotion.model.blocks.paragraph'] = nil
 
     factory = require('neotion.model.blocks.factory')
+  end)
+
+  -- Bug fix: New blocks created from orphans should serialize with correct content
+  describe('new block serialization', function()
+    it('should serialize new paragraph with correct content', function()
+      local block = factory.create_from_lines({ 'evet test toggle icerigi 11' }, nil)
+
+      assert.is_not_nil(block)
+      assert.are.equal('paragraph', block:get_type())
+      assert.are.equal('evet test toggle icerigi 11', block:get_text())
+
+      -- Serialize and verify content is preserved
+      local serialized = block:serialize()
+      assert.is_not_nil(serialized.paragraph)
+      assert.is_not_nil(serialized.paragraph.rich_text)
+      assert.are.equal(1, #serialized.paragraph.rich_text)
+      assert.are.equal('evet test toggle icerigi 11', serialized.paragraph.rich_text[1].text.content)
+    end)
+
+    it('should serialize new heading with correct content', function()
+      local block = factory.create_from_lines({ '## Test Heading' }, nil)
+
+      assert.is_not_nil(block)
+      assert.are.equal('heading_2', block:get_type())
+      assert.are.equal('Test Heading', block:get_text())
+
+      local serialized = block:serialize()
+      assert.is_not_nil(serialized.heading_2)
+      assert.is_not_nil(serialized.heading_2.rich_text)
+      assert.are.equal(1, #serialized.heading_2.rich_text)
+      assert.are.equal('Test Heading', serialized.heading_2.rich_text[1].text.content)
+    end)
+
+    it('should serialize new bulleted list item with correct content', function()
+      local block = factory.create_from_lines({ '- List item content' }, nil)
+
+      assert.is_not_nil(block)
+      assert.are.equal('bulleted_list_item', block:get_type())
+      assert.are.equal('List item content', block:get_text())
+
+      local serialized = block:serialize()
+      assert.is_not_nil(serialized.bulleted_list_item)
+      assert.is_not_nil(serialized.bulleted_list_item.rich_text)
+      assert.are.equal(1, #serialized.bulleted_list_item.rich_text)
+      assert.are.equal('List item content', serialized.bulleted_list_item.rich_text[1].text.content)
+    end)
+
+    it('should serialize empty paragraph correctly', function()
+      local block = factory.create_from_lines({ '' }, nil)
+
+      assert.is_not_nil(block)
+      assert.are.equal('paragraph', block:get_type())
+      assert.are.equal('', block:get_text())
+
+      local serialized = block:serialize()
+      assert.is_not_nil(serialized.paragraph)
+      assert.is_not_nil(serialized.paragraph.rich_text)
+      -- Empty paragraph should have empty rich_text or single empty text
+    end)
+
+    it('should serialize child block created from orphan with content', function()
+      -- Simulate orphan with parent_block_id (child of toggle)
+      local orphans = {
+        {
+          start_line = 11,
+          end_line = 11,
+          content = { 'evet test toggle icerigi 11' },
+          parent_block_id = 'toggle-block-id',
+          indent_level = 1,
+        },
+      }
+
+      local blocks = factory.create_from_orphans(orphans)
+
+      assert.are.equal(1, #blocks)
+      local block = blocks[1]
+      assert.are.equal('paragraph', block:get_type())
+      assert.are.equal('evet test toggle icerigi 11', block:get_text())
+      assert.are.equal('toggle-block-id', block.parent_block_id)
+
+      -- Serialize and verify content
+      local serialized = block:serialize()
+      assert.is_not_nil(serialized.paragraph)
+      assert.is_not_nil(serialized.paragraph.rich_text)
+      assert.are.equal(1, #serialized.paragraph.rich_text)
+      assert.are.equal('evet test toggle icerigi 11', serialized.paragraph.rich_text[1].text.content)
+    end)
   end)
 
   describe('create_from_lines', function()
@@ -546,6 +634,230 @@ describe('neotion.model.blocks.factory', function()
           assert.is_true(text:find('Hello') ~= nil)
           assert.is_true(text:find('World') ~= nil)
         end)
+      end)
+    end)
+
+    -- Phase 4: parent_block_id support for children
+    describe('parent_block_id support', function()
+      it('should set parent_block_id on blocks when orphan has parent_block_id', function()
+        local orphans = {
+          {
+            start_line = 2,
+            end_line = 2,
+            content = { 'Child paragraph' },
+            parent_block_id = 'toggle1',
+            indent_level = 1,
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(1, #blocks)
+        assert.are.equal('toggle1', blocks[1].parent_block_id)
+        assert.is_nil(blocks[1].after_block_id)
+      end)
+
+      it('should set indent_level on blocks', function()
+        local orphans = {
+          {
+            start_line = 2,
+            end_line = 2,
+            content = { 'Indented content' },
+            parent_block_id = 'toggle1',
+            indent_level = 2,
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(1, #blocks)
+        assert.are.equal(2, blocks[1].indent_level)
+      end)
+
+      it('should use after_block_id when no parent_block_id', function()
+        local orphans = {
+          {
+            start_line = 2,
+            end_line = 2,
+            content = { 'Sibling paragraph' },
+            after_block_id = 'block1',
+            indent_level = 0,
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(1, #blocks)
+        assert.are.equal('block1', blocks[1].after_block_id)
+        assert.is_nil(blocks[1].parent_block_id)
+      end)
+
+      it('should handle multiple children in same orphan range', function()
+        local orphans = {
+          {
+            start_line = 2,
+            end_line = 4,
+            content = { '- Child 1', '- Child 2', '- Child 3' },
+            parent_block_id = 'toggle1',
+            indent_level = 1,
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(3, #blocks)
+        -- All should have same parent
+        assert.are.equal('toggle1', blocks[1].parent_block_id)
+        assert.are.equal('toggle1', blocks[2].parent_block_id)
+        assert.are.equal('toggle1', blocks[3].parent_block_id)
+      end)
+
+      it('should preserve parent_block_id across type boundary splits', function()
+        local orphans = {
+          {
+            start_line = 2,
+            end_line = 3,
+            content = { '- Bullet child', 'Paragraph child' },
+            parent_block_id = 'toggle1',
+            indent_level = 1,
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(2, #blocks)
+        assert.are.equal('bulleted_list_item', blocks[1]:get_type())
+        assert.are.equal('paragraph', blocks[2]:get_type())
+        -- Both should have same parent
+        assert.are.equal('toggle1', blocks[1].parent_block_id)
+        assert.are.equal('toggle1', blocks[2].parent_block_id)
+      end)
+
+      -- BUG FIX: Orphan toggle with orphan child (both new blocks)
+      it('should detect parent from previous orphan when both are new', function()
+        -- Scenario: User writes new toggle + indented child
+        -- Both are orphans, no existing blocks
+        -- Child should use toggle's temp_id as parent_block_id
+        local orphans = {
+          {
+            start_line = 1,
+            end_line = 1,
+            content = { '> test toggle' },
+            after_block_id = 'existing-block',
+            indent_level = 0,
+          },
+          {
+            start_line = 2,
+            end_line = 2,
+            content = { 'inner paragraph' }, -- Already stripped of indent
+            after_block_id = 'existing-block', -- Same after_block_id because detect_orphan_lines couldn't find parent
+            indent_level = 1,
+            -- parent_block_id is nil because toggle was also orphan (not in buffer_blocks)
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(2, #blocks)
+
+        -- First block: toggle
+        assert.are.equal('toggle', blocks[1]:get_type())
+        assert.are.equal('test toggle', blocks[1]:get_text())
+        assert.is_nil(blocks[1].parent_block_id) -- Toggle has no parent
+        assert.are.equal(0, blocks[1].indent_level)
+
+        -- Second block: paragraph child
+        assert.are.equal('paragraph', blocks[2]:get_type())
+        assert.are.equal('inner paragraph', blocks[2]:get_text())
+        assert.are.equal(1, blocks[2].indent_level)
+
+        -- BUG FIX: Child should detect toggle as parent
+        -- Since toggle was created first, child should use toggle's temp_id
+        assert.is_not_nil(blocks[2].parent_block_id, 'Child should have parent_block_id')
+        assert.are.equal(blocks[1].temp_id, blocks[2].parent_block_id, 'Child parent should be toggle temp_id')
+        assert.is_nil(blocks[2].after_block_id, 'Child should not have after_block_id when it has parent')
+      end)
+
+      it('should handle multiple children under orphan toggle', function()
+        local orphans = {
+          {
+            start_line = 1,
+            end_line = 1,
+            content = { '> My Toggle' },
+            after_block_id = 'existing',
+            indent_level = 0,
+          },
+          {
+            start_line = 2,
+            end_line = 2,
+            content = { 'First child' },
+            after_block_id = 'existing',
+            indent_level = 1,
+          },
+          {
+            start_line = 3,
+            end_line = 3,
+            content = { 'Second child' },
+            after_block_id = 'existing',
+            indent_level = 1,
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(3, #blocks)
+
+        -- Toggle
+        assert.are.equal('toggle', blocks[1]:get_type())
+        assert.is_nil(blocks[1].parent_block_id)
+
+        -- Both children should have toggle as parent
+        assert.are.equal(blocks[1].temp_id, blocks[2].parent_block_id)
+        assert.are.equal(blocks[1].temp_id, blocks[3].parent_block_id)
+      end)
+
+      it('should handle orphan sibling after orphan toggle with children', function()
+        local orphans = {
+          {
+            start_line = 1,
+            end_line = 1,
+            content = { '> Toggle' },
+            after_block_id = 'existing',
+            indent_level = 0,
+          },
+          {
+            start_line = 2,
+            end_line = 2,
+            content = { 'Toggle child' },
+            after_block_id = 'existing',
+            indent_level = 1,
+          },
+          {
+            start_line = 3,
+            end_line = 3,
+            content = { 'Sibling paragraph' },
+            after_block_id = 'existing',
+            indent_level = 0, -- Back to indent 0 = sibling
+          },
+        }
+
+        local blocks = factory.create_from_orphans(orphans)
+
+        assert.are.equal(3, #blocks)
+
+        -- Toggle
+        assert.are.equal('toggle', blocks[1]:get_type())
+        assert.is_nil(blocks[1].parent_block_id)
+
+        -- Child has toggle as parent
+        assert.are.equal('paragraph', blocks[2]:get_type())
+        assert.are.equal(blocks[1].temp_id, blocks[2].parent_block_id)
+
+        -- Sibling has NO parent (indent 0)
+        assert.are.equal('paragraph', blocks[3]:get_type())
+        assert.is_nil(blocks[3].parent_block_id)
+        -- Sibling should be after toggle (chained)
+        assert.are.equal(blocks[1].temp_id, blocks[3].after_block_id)
       end)
     end)
   end)

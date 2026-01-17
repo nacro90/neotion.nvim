@@ -408,7 +408,8 @@ local function start_api_search(state, query)
     local merged = M.merge_results(api_items, state.cached_results)
 
     -- Save API results to cache for future searches
-    if result.pages and #result.pages > 0 then
+    -- Skip cache save when using mock API (testing mode)
+    if result.pages and #result.pages > 0 and not mock_api_searcher then
       -- Ensure cache is initialized before saving
       local cache_ok, cache = pcall(require, 'neotion.cache')
       if cache_ok and cache.is_available() and not cache.is_initialized() then

@@ -327,22 +327,6 @@ describe('neotion.model.blocks.toggle', function()
     end)
   end)
 
-  describe('ToggleBlock:has_children', function()
-    it('should return false (children not supported in MVP)', function()
-      local raw = {
-        id = 'test',
-        type = 'toggle',
-        toggle = { rich_text = {} },
-        has_children = true, -- API says it has children
-      }
-
-      local block = toggle_module.new(raw)
-
-      -- MVP ignores children
-      assert.is_false(block:has_children())
-    end)
-  end)
-
   describe('ToggleBlock:get_gutter_icon', function()
     it('should return collapsed icon', function()
       local raw = {
@@ -527,6 +511,52 @@ describe('neotion.model.blocks.toggle', function()
         -- No prefix to strip, return as-is
         assert.are.equal('Plain paragraph', block:get_converted_content())
       end)
+    end)
+  end)
+
+  describe('supports_children', function()
+    it('should return true for toggle blocks', function()
+      local raw = {
+        id = 'test',
+        type = 'toggle',
+        toggle = { rich_text = { { plain_text = 'Toggle' } } },
+      }
+      local block = toggle_module.new(raw)
+
+      assert.is_true(block:supports_children())
+    end)
+  end)
+
+  describe('has_children', function()
+    it('should return true when raw.has_children is true', function()
+      local raw = {
+        id = 'test',
+        type = 'toggle',
+        toggle = { rich_text = {} },
+        has_children = true,
+      }
+      local block = toggle_module.new(raw)
+
+      assert.is_true(block:has_children())
+    end)
+
+    it('should return true when children are added locally', function()
+      local raw = {
+        id = 'parent',
+        type = 'toggle',
+        toggle = { rich_text = {} },
+      }
+      local block = toggle_module.new(raw)
+      local child_raw = {
+        id = 'child',
+        type = 'paragraph',
+        paragraph = { rich_text = {} },
+      }
+      local child = require('neotion.model.block').Block.new(child_raw)
+
+      block:add_child(child)
+
+      assert.is_true(block:has_children())
     end)
   end)
 end)

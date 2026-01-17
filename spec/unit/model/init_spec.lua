@@ -42,7 +42,7 @@ describe('neotion.model', function()
 
     it('should handle unsupported block types', function()
       local raw_blocks = {
-        { id = 'toggle1', type = 'toggle', toggle = {} },
+        { id = 'callout1', type = 'callout', callout = {} },
       }
 
       local blocks = model.deserialize_blocks(raw_blocks)
@@ -94,9 +94,10 @@ describe('neotion.model', function()
     end)
 
     it('should return false for unsupported types', function()
-      assert.is_false(model.is_supported('toggle'))
-      assert.is_false(model.is_supported('numbered_list_item'))
+      -- toggle and numbered_list_item are now supported
+      assert.is_false(model.is_supported('callout'))
       assert.is_false(model.is_supported('image'))
+      assert.is_false(model.is_supported('embed'))
     end)
   end)
 
@@ -117,7 +118,7 @@ describe('neotion.model', function()
     it('should return false when unsupported blocks present', function()
       local raw_blocks = {
         { id = '1', type = 'paragraph', paragraph = { rich_text = {} } },
-        { id = '2', type = 'toggle', toggle = { rich_text = {} } },
+        { id = '2', type = 'callout', callout = { rich_text = {} } },
       }
       local blocks = model.deserialize_blocks(raw_blocks)
 
@@ -125,7 +126,7 @@ describe('neotion.model', function()
 
       assert.is_false(is_editable)
       assert.are.equal(1, #unsupported)
-      assert.are.equal('toggle', unsupported[1])
+      assert.are.equal('callout', unsupported[1])
     end)
   end)
 
@@ -369,6 +370,133 @@ describe('neotion.model', function()
       local lines = model.format_database_rows({})
 
       assert.are.equal(0, #lines)
+    end)
+  end)
+
+  describe('format_blocks with children', function()
+    it('should format children with indentation', function()
+      local raw_blocks = {
+        {
+          id = 'toggle1',
+          type = 'toggle',
+          toggle = { rich_text = { { plain_text = 'Toggle Header' } } },
+          has_children = true,
+          _children = {
+            {
+              id = 'child1',
+              type = 'paragraph',
+              paragraph = { rich_text = { { plain_text = 'Child paragraph' } } },
+            },
+          },
+        },
+      }
+      local blocks = model.deserialize_blocks(raw_blocks)
+
+      local lines = model.format_blocks(blocks)
+
+      assert.are.equal(2, #lines)
+      assert.are.equal('> Toggle Header', lines[1])
+      assert.are.equal('  Child paragraph', lines[2]) -- 2-space indent
+    end)
+
+    it('should format nested children with increasing indentation', function()
+      local raw_blocks = {
+        {
+          id = 'toggle1',
+          type = 'toggle',
+          toggle = { rich_text = { { plain_text = 'Outer Toggle' } } },
+          has_children = true,
+          _children = {
+            {
+              id = 'nested_toggle',
+              type = 'toggle',
+              toggle = { rich_text = { { plain_text = 'Nested Toggle' } } },
+              has_children = true,
+              _children = {
+                {
+                  id = 'deep_child',
+                  type = 'paragraph',
+                  paragraph = { rich_text = { { plain_text = 'Deep content' } } },
+                },
+              },
+            },
+          },
+        },
+      }
+      local blocks = model.deserialize_blocks(raw_blocks)
+
+      local lines = model.format_blocks(blocks)
+
+      assert.are.equal(3, #lines)
+      assert.are.equal('> Outer Toggle', lines[1])
+      assert.are.equal('  > Nested Toggle', lines[2]) -- depth 1
+      assert.are.equal('    Deep content', lines[3]) -- depth 2
+    end)
+
+    it('should format quote block children with indentation', function()
+      local raw_blocks = {
+        {
+          id = 'quote1',
+          type = 'quote',
+          quote = { rich_text = { { plain_text = 'Quote text' } } },
+          has_children = true,
+          _children = {
+            {
+              id = 'child1',
+              type = 'paragraph',
+              paragraph = { rich_text = { { plain_text = 'Quote child' } } },
+            },
+          },
+        },
+      }
+      local blocks = model.deserialize_blocks(raw_blocks)
+
+      local lines = model.format_blocks(blocks)
+
+      assert.are.equal(2, #lines)
+      assert.are.equal('| Quote text', lines[1])
+      assert.are.equal('  Quote child', lines[2])
+    end)
+
+    it('should format bulleted list children with indentation', function()
+      local raw_blocks = {
+        {
+          id = 'bullet1',
+          type = 'bulleted_list_item',
+          bulleted_list_item = { rich_text = { { plain_text = 'Parent bullet' } } },
+          has_children = true,
+          _children = {
+            {
+              id = 'child1',
+              type = 'bulleted_list_item',
+              bulleted_list_item = { rich_text = { { plain_text = 'Child bullet' } } },
+            },
+          },
+        },
+      }
+      local blocks = model.deserialize_blocks(raw_blocks)
+
+      local lines = model.format_blocks(blocks)
+
+      assert.are.equal(2, #lines)
+      assert.are.equal('- Parent bullet', lines[1])
+      assert.are.equal('  - Child bullet', lines[2])
+    end)
+
+    it('should format blocks without children normally', function()
+      local raw_blocks = {
+        {
+          id = 'para1',
+          type = 'paragraph',
+          paragraph = { rich_text = { { plain_text = 'Normal paragraph' } } },
+        },
+      }
+      local blocks = model.deserialize_blocks(raw_blocks)
+
+      local lines = model.format_blocks(blocks)
+
+      assert.are.equal(1, #lines)
+      assert.are.equal('Normal paragraph', lines[1])
     end)
   end)
 end)

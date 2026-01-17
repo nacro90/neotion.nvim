@@ -1,3 +1,7 @@
+-- TODO(neotion:FEAT-14:HIGH): File block support (image, video, pdf, file)
+-- Media block desteği: read-only render, tiered opening, cache sistemi
+-- Detay: .claude/docs/FEAT-14-file-blocks.md
+
 --- Block factory for creating new blocks from buffer content
 --- Handles orphan lines and type detection
 ---@module 'neotion.model.blocks.factory'
@@ -338,20 +342,86 @@ local function split_orphan_by_type_boundaries(lines)
   return segments
 end
 
+--- Find potential parent block from previously created blocks
+--- Used when both parent and child are orphans (new blocks)
+---@param created_blocks neotion.Block[] Already created blocks in this batch
+---@param child_indent integer The child's indent level
+---@return neotion.Block|nil parent_block The parent block or nil
+local function find_parent_from_created_blocks(created_blocks, child_indent)
+  if child_indent <= 0 then
+    return nil
+  end
+
+  -- Traverse backwards to find closest block that:
+  -- 1. Has lower indent level
+  -- 2. Supports children
+  for i = #created_blocks, 1, -1 do
+    local block = created_blocks[i]
+    local block_indent = block.indent_level or 0
+
+    if block_indent < child_indent then
+      -- Check if block supports children
+      local supports = false
+      if type(block.supports_children) == 'function' then
+        supports = block:supports_children()
+      end
+
+      if supports then
+        return block
+      else
+        -- Found a block at lower indent but it doesn't support children
+        -- This breaks the parent chain - no valid parent found
+        return nil
+      end
+    end
+  end
+
+  return nil
+end
+
 --- Create blocks from orphan line ranges
 --- Now splits multi-line orphans by type boundaries (Bug #10.2 fix)
+--- Also detects parent-child relationships between orphans (orphan-to-orphan parenting)
 ---@param orphans neotion.OrphanLineRange[] Orphan line ranges from mapping.detect_orphan_lines
 ---@return neotion.Block[] blocks New block instances
 function M.create_from_orphans(orphans)
   local blocks = {}
 
+  -- Track last non-child block for sibling chaining
+  local last_top_level_block = nil
+
   for _, orphan in ipairs(orphans) do
     -- Split orphan by type boundaries, getting line offsets for each segment
     local segments = split_orphan_by_type_boundaries(orphan.content)
 
-    -- Track after_block_id for positioning - first block uses orphan's after_block_id
-    -- subsequent blocks should be after the previous created block (handled by caller)
-    local current_after_id = orphan.after_block_id
+    -- Determine parent: from orphan data or from previously created blocks
+    local orphan_parent_id = orphan.parent_block_id
+    local orphan_indent = orphan.indent_level or 0
+
+    -- If no parent_block_id but indented, try to find parent from created blocks
+    if not orphan_parent_id and orphan_indent > 0 then
+      local parent_block = find_parent_from_created_blocks(blocks, orphan_indent)
+      if parent_block then
+        orphan_parent_id = parent_block.temp_id
+        log.debug('Found orphan-to-orphan parent', {
+          child_indent = orphan_indent,
+          parent_temp_id = orphan_parent_id,
+          parent_type = parent_block:get_type(),
+        })
+      end
+    end
+
+    -- Track after_block_id for positioning
+    -- If orphan has parent, children are appended to parent (no after_block_id needed)
+    -- Otherwise, chain from last top-level block or use orphan's after_block_id
+    local current_after_id
+    if orphan_parent_id then
+      current_after_id = nil -- Children don't use after_block_id
+    elseif last_top_level_block then
+      current_after_id = last_top_level_block.temp_id
+    else
+      current_after_id = orphan.after_block_id
+    end
 
     for i, segment in ipairs(segments) do
       local block = M.create_from_lines(segment.lines, current_after_id)
@@ -365,17 +435,31 @@ function M.create_from_orphans(orphans)
         block.orphan_end_line = segment_end
         block.segment_index = i
 
+        -- Set parent_block_id and indent_level
+        if orphan_parent_id then
+          block.parent_block_id = orphan_parent_id
+          block.after_block_id = nil -- Children use parent, not after_block_id
+        end
+        if orphan.indent_level then
+          block.indent_level = orphan.indent_level
+        end
+
         log.debug('Block line range calculated', {
           segment_index = i,
           segment_start = segment_start,
           segment_end = segment_end,
           line_count = #segment.lines,
+          parent_block_id = block.parent_block_id,
+          indent_level = block.indent_level,
         })
 
         table.insert(blocks, block)
 
-        -- Next block should be after this one (using temp_id)
-        current_after_id = block.temp_id
+        -- Track last top-level block for sibling chaining
+        if not orphan_parent_id then
+          last_top_level_block = block
+          current_after_id = block.temp_id
+        end
       end
     end
   end

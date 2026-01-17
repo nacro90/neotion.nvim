@@ -466,7 +466,7 @@ describe('neotion.model.blocks.numbered_list', function()
   end)
 
   describe('NumberedListBlock:has_children', function()
-    it('should return false (nesting not supported)', function()
+    it('should return true when API says has_children', function()
       local raw = {
         id = 'test',
         type = 'numbered_list_item',
@@ -476,7 +476,32 @@ describe('neotion.model.blocks.numbered_list', function()
 
       local block = numbered_list_module.new(raw)
 
+      assert.is_true(block:has_children())
+    end)
+
+    it('should return false when no children', function()
+      local raw = {
+        id = 'test',
+        type = 'numbered_list_item',
+        numbered_list_item = { rich_text = {} },
+        has_children = false,
+      }
+
+      local block = numbered_list_module.new(raw)
+
       assert.is_false(block:has_children())
+    end)
+
+    it('should support children (nested lists)', function()
+      local raw = {
+        id = 'test',
+        type = 'numbered_list_item',
+        numbered_list_item = { rich_text = {} },
+      }
+
+      local block = numbered_list_module.new(raw)
+
+      assert.is_true(block:supports_children())
     end)
   end)
 

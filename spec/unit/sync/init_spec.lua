@@ -412,7 +412,7 @@ describe('neotion.sync', function()
 
       assert.is_false(success, 'Should fail when page_id is missing')
       assert.is_true(#returned_errors > 0, 'Should have errors')
-      assert.is_truthy(returned_errors[1]:match('page_id'), 'Error should mention page_id')
+      assert.is_truthy(returned_errors[1]:match('target_id'), 'Error should mention target_id')
 
       -- Block should retain its new state
       assert.is_true(block.is_new, 'is_new should remain true')
@@ -674,6 +674,105 @@ describe('neotion.sync', function()
         #mock_cache_pages.save_content_calls,
         'Should NOT call save_content when cache not initialized'
       )
+    end)
+  end)
+
+  -- BUG FIX: Orphan parent with orphan child sync
+  describe('orphan parent-child sync', function()
+    it('should create child block under newly created parent', function()
+      -- Scenario: User writes toggle + indented child, both are orphans
+      -- Toggle (indent 0) should be created first
+      -- Child (indent 1) should be appended to toggle, not to page
+
+      local toggle_block = create_mock_block({
+        temp_id = 'temp_toggle_123',
+        type = 'toggle',
+        text = 'test toggle',
+      })
+      toggle_block.supports_children = function()
+        return true
+      end
+
+      local child_block = create_mock_block({
+        temp_id = 'temp_child_456',
+        type = 'paragraph',
+        text = 'inner paragraph',
+      })
+      child_block.indent_level = 1
+      -- Child should reference parent's temp_id as parent_block_id
+      child_block.parent_block_id = 'temp_toggle_123'
+
+      local plan = create_mock_plan({
+        creates = {
+          {
+            block = toggle_block,
+            content = 'test toggle',
+            block_type = 'toggle',
+            temp_id = 'temp_toggle_123',
+            after_block_id = 'existing-block-id-000000000000000',
+          },
+          {
+            block = child_block,
+            content = 'inner paragraph',
+            block_type = 'paragraph',
+            temp_id = 'temp_child_456',
+            parent_block_id = 'temp_toggle_123', -- References temp_id of toggle
+          },
+        },
+      })
+
+      -- First call creates toggle, second creates child
+      local call_count = 0
+      mock_blocks_api.append = function(parent_id, children, callback, after_block_id)
+        call_count = call_count + 1
+        table.insert(mock_blocks_api.append_calls, {
+          parent_id = parent_id,
+          children = children,
+          after_block_id = after_block_id,
+          call_index = call_count,
+        })
+
+        -- Toggle creation returns new ID
+        if call_count == 1 then
+          vim.schedule(function()
+            callback({ error = nil, blocks = { { id = 'real-toggle-id-0000000000000000' } } })
+          end)
+        else
+          -- Child creation
+          vim.schedule(function()
+            callback({ error = nil, blocks = { { id = 'real-child-id-00000000000000000' } } })
+          end)
+        end
+      end
+
+      local completed = false
+      local success = false
+
+      sync.execute(1, plan, function(ok)
+        completed = true
+        success = ok
+      end)
+
+      vim.wait(1000, function()
+        return completed
+      end)
+
+      assert.is_true(success, 'Sync should succeed')
+      assert.are.equal(2, #mock_blocks_api.append_calls, 'Should make 2 append calls')
+
+      -- First call: toggle created under page
+      local toggle_call = mock_blocks_api.append_calls[1]
+      assert.are.equal('test-page-id-00000000000000000', toggle_call.parent_id, 'Toggle should be created under page')
+      assert.are.equal('toggle', toggle_call.children[1].type, 'First create should be toggle')
+
+      -- Second call: child created under toggle (using real ID)
+      local child_call = mock_blocks_api.append_calls[2]
+      assert.are.equal(
+        'real-toggle-id-0000000000000000',
+        child_call.parent_id,
+        'Child should be created under toggle (using real ID)'
+      )
+      assert.are.equal('paragraph', child_call.children[1].type, 'Second create should be paragraph')
     end)
   end)
 end)

@@ -501,5 +501,3 @@ end
 M.DatabaseView = DatabaseView
 
 return M
-
-

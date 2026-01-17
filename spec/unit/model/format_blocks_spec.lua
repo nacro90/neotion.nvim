@@ -16,6 +16,7 @@ describe('neotion.model.format_blocks', function()
     local block = {
       type = 'numbered_list_item',
       number = 1,
+      children = {},
     }
 
     function block:format()
@@ -26,6 +27,10 @@ describe('neotion.model.format_blocks', function()
       self.number = n
     end
 
+    function block:get_children()
+      return self.children or {}
+    end
+
     return block
   end
 
@@ -33,10 +38,15 @@ describe('neotion.model.format_blocks', function()
   local function make_paragraph_block(text)
     local block = {
       type = 'paragraph',
+      children = {},
     }
 
     function block:format()
       return { text }
+    end
+
+    function block:get_children()
+      return self.children or {}
     end
 
     return block
@@ -46,10 +56,15 @@ describe('neotion.model.format_blocks', function()
   local function make_bulleted_block(text)
     local block = {
       type = 'bulleted_list_item',
+      children = {},
     }
 
     function block:format()
       return { '- ' .. text }
+    end
+
+    function block:get_children()
+      return self.children or {}
     end
 
     return block

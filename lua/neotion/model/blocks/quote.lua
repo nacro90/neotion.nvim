@@ -71,14 +71,19 @@ end
 ---@param opts? {indent?: integer, indent_size?: integer}
 ---@return string[]
 function QuoteBlock:format(opts)
+  opts = opts or {}
+  local indent = opts.indent or 0
+  local indent_size = opts.indent_size or 2
+  local prefix = string.rep(' ', indent * indent_size)
+
   if self.text == '' then
-    return { QUOTE_PREFIX }
+    return { prefix .. QUOTE_PREFIX }
   end
 
   -- Handle multi-line content (soft breaks from Notion)
   local lines = {}
   for line in (self.text .. '\n'):gmatch('([^\n]*)\n') do
-    table.insert(lines, QUOTE_PREFIX .. line)
+    table.insert(lines, prefix .. QUOTE_PREFIX .. line)
   end
 
   return lines
@@ -211,8 +216,14 @@ end
 ---Check if block has children (not supported in Phase 5.7)
 ---@return boolean
 function QuoteBlock:has_children()
-  -- Children support deferred to Phase 9
-  return false
+  -- Use base class implementation that checks both raw.has_children and #self.children
+  return self.raw.has_children or #self.children > 0
+end
+
+---Quote blocks can contain child blocks
+---@return boolean
+function QuoteBlock:supports_children()
+  return true
 end
 
 ---Get rich text segments from block's rich_text

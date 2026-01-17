@@ -36,6 +36,7 @@ local M = {}
 ---@field archived boolean
 ---@field parent table
 ---@field [string] table Block type specific data
+---@field _children? neotion.api.Block[] Children blocks (populated by get_all_children)
 
 ---@class neotion.api.BlocksResult
 ---@field blocks neotion.api.Block[]
@@ -82,10 +83,16 @@ function M.get_children(block_id, callback, cursor)
   end)
 end
 
----Get all children blocks recursively (handles pagination)
----@param block_id string
+---Get all children blocks recursively (handles pagination and nested children)
+---Blocks with has_children=true will have their children fetched and stored in _children field
+---@param block_id string Block or Page ID
 ---@param callback fun(result: neotion.api.BlocksResult)
-function M.get_all_children(block_id, callback)
+---@param opts? {max_depth?: number, _current_depth?: number} Options (max_depth defaults to 3)
+function M.get_all_children(block_id, callback, opts)
+  opts = opts or {}
+  local max_depth = opts.max_depth or 3
+  local current_depth = opts._current_depth or 0
+
   local all_blocks = {}
 
   local function fetch_page(cursor)
@@ -100,12 +107,69 @@ function M.get_all_children(block_id, callback)
       if result.has_more and result.next_cursor then
         fetch_page(result.next_cursor)
       else
-        callback({ blocks = all_blocks, has_more = false, error = nil })
+        -- All blocks for this level fetched, now fetch nested children
+        M._fetch_nested_children(all_blocks, max_depth, current_depth, function(err)
+          if err then
+            callback({ blocks = all_blocks, has_more = false, error = err })
+          else
+            callback({ blocks = all_blocks, has_more = false, error = nil })
+          end
+        end)
       end
     end, cursor)
   end
 
   fetch_page(nil)
+end
+
+---Recursively fetch children for blocks that have children
+---@param blocks neotion.api.Block[] Blocks to process
+---@param max_depth number Maximum nesting depth
+---@param current_depth number Current depth level
+---@param callback fun(error: string|nil) Called when all nested children are fetched
+---@private
+function M._fetch_nested_children(blocks, max_depth, current_depth, callback)
+  -- Don't go deeper than max_depth
+  if current_depth >= max_depth then
+    callback(nil)
+    return
+  end
+
+  -- Find blocks that have children
+  local blocks_with_children = {}
+  for _, block in ipairs(blocks) do
+    if block.has_children then
+      table.insert(blocks_with_children, block)
+    end
+  end
+
+  -- No blocks with children, we're done
+  if #blocks_with_children == 0 then
+    callback(nil)
+    return
+  end
+
+  -- Fetch children for each block sequentially to avoid rate limiting
+  local pending = #blocks_with_children
+  local first_error = nil
+
+  for _, block in ipairs(blocks_with_children) do
+    M.get_all_children(block.id, function(result)
+      if result.error and not first_error then
+        first_error = result.error
+      end
+
+      -- Store children in the block's _children field
+      if not result.error and #result.blocks > 0 then
+        block._children = result.blocks
+      end
+
+      pending = pending - 1
+      if pending == 0 then
+        callback(first_error)
+      end
+    end, { max_depth = max_depth, _current_depth = current_depth + 1 })
+  end
 end
 
 ---Extract plain text from rich text array
@@ -267,6 +331,7 @@ end
 function M.append(parent_id, children, callback, after_block_id)
   local auth = require('neotion.api.auth')
   local throttle = require('neotion.api.throttle')
+  local log = require('neotion.log').get_logger('api.blocks')
 
   local token_result = auth.get_token()
   if not token_result.token then

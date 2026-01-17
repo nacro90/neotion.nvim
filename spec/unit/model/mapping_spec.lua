@@ -12,6 +12,7 @@ describe('neotion.model.mapping', function()
       dirty = false,
       line_start = nil,
       line_end = nil,
+      children = {},
       get_id = function(self)
         return self.id
       end,
@@ -49,6 +50,9 @@ describe('neotion.model.mapping', function()
           table.insert(lines, line)
         end
         return #lines > 0 and lines or { self.text }
+      end,
+      get_children = function(self)
+        return self.children or {}
       end,
     }
   end
@@ -136,6 +140,44 @@ describe('neotion.model.mapping', function()
       local extmarks = vim.api.nvim_buf_get_extmarks(bufnr, ns_id, 0, -1, {})
 
       assert.is_true(#extmarks > 0)
+    end)
+
+    it('should create extmarks for children blocks', function()
+      -- Create parent with children
+      local child1 = create_mock_block('child1', 'paragraph', 'Child 1')
+      local child2 = create_mock_block('child2', 'paragraph', 'Child 2')
+      local parent = create_mock_block('parent', 'toggle', 'Toggle')
+      parent.children = { child1, child2 }
+
+      -- Set up buffer with content matching the blocks
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'Toggle',
+        '  Child 1',
+        '  Child 2',
+      })
+
+      local blocks = { parent }
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      local ns_id = mapping.get_namespace()
+      local extmarks = vim.api.nvim_buf_get_extmarks(bufnr, ns_id, 0, -1, {})
+
+      -- Should have 3 extmarks: 1 for parent + 2 for children
+      assert.are.equal(3, #extmarks, 'Should have extmarks for parent and both children')
+
+      -- Verify line ranges are set for all blocks
+      local parent_start, parent_end = parent:get_line_range()
+      assert.are.equal(1, parent_start)
+      assert.are.equal(1, parent_end)
+
+      local child1_start, child1_end = child1:get_line_range()
+      assert.are.equal(2, child1_start)
+      assert.are.equal(2, child1_end)
+
+      local child2_start, child2_end = child2:get_line_range()
+      assert.are.equal(3, child2_start)
+      assert.are.equal(3, child2_end)
     end)
   end)
 
@@ -402,6 +444,7 @@ describe('neotion.model.mapping', function()
         dirty = false,
         line_start = nil,
         line_end = nil,
+        children = {},
         get_id = function(self)
           return self.id
         end,
@@ -450,6 +493,9 @@ describe('neotion.model.mapping', function()
           else
             return { self.content or '' }
           end
+        end,
+        get_children = function(self)
+          return self.children or {}
         end,
       }
       return block
@@ -715,6 +761,7 @@ describe('neotion.model.mapping', function()
         dirty = false,
         line_start = nil,
         line_end = nil,
+        children = {},
         get_id = function(self)
           return self.id
         end,
@@ -751,6 +798,9 @@ describe('neotion.model.mapping', function()
           else
             return { self.content or '' }
           end
+        end,
+        get_children = function(self)
+          return self.children or {}
         end,
       }
       return block
@@ -1126,6 +1176,438 @@ describe('neotion.model.mapping', function()
       assert.are.equal('---', orphans[1].content[1])
       assert.are.equal('## Test title 1', orphans[1].content[2])
       assert.is_nil(orphans[1].after_block_id, 'No previous block')
+    end)
+  end)
+
+  describe('refresh_line_ranges with children blocks', function()
+    -- Helper to create typed mock block with children support
+    local function create_typed_block(id, block_type, content, opts)
+      opts = opts or {}
+      local block = {
+        id = id,
+        type = block_type,
+        content = content or '',
+        editable = opts.editable ~= false,
+        dirty = false,
+        line_start = nil,
+        line_end = nil,
+        children = opts.children or {},
+        supports_children = opts.supports_children or false,
+        get_id = function(self)
+          return self.id
+        end,
+        get_type = function(self)
+          return self.type
+        end,
+        is_editable = function(self)
+          return self.editable
+        end,
+        is_dirty = function(self)
+          return self.dirty
+        end,
+        set_dirty = function(self, value)
+          self.dirty = value
+        end,
+        set_line_range = function(self, start_line, end_line)
+          self.line_start = start_line
+          self.line_end = end_line
+        end,
+        get_line_range = function(self)
+          return self.line_start, self.line_end
+        end,
+        contains_line = function(self, line)
+          if not self.line_start or not self.line_end then
+            return false
+          end
+          return line >= self.line_start and line <= self.line_end
+        end,
+        format = function(self, format_opts)
+          format_opts = format_opts or {}
+          local indent = format_opts.indent or 0
+          local prefix = string.rep('  ', indent)
+
+          if self.type == 'toggle' then
+            return { prefix .. '▶ ' .. (self.content or '') }
+          elseif self.type == 'paragraph' then
+            return { prefix .. (self.content or '') }
+          elseif self.type == 'bulleted_list_item' then
+            return { prefix .. '- ' .. (self.content or '') }
+          else
+            return { prefix .. (self.content or '') }
+          end
+        end,
+        get_children = function(self)
+          return self.children or {}
+        end,
+        get_text = function(self)
+          return self.content or ''
+        end,
+      }
+      return block
+    end
+
+    -- BUG TEST: This test should FAIL until refresh_line_ranges is fixed to handle children
+    it('should update children line ranges after buffer edit', function()
+      -- Create toggle with child paragraph
+      local child_block = create_typed_block('child1', 'paragraph', 'existing child content')
+      local toggle_block = create_typed_block('toggle1', 'toggle', 'toggle title', {
+        editable = false,
+        supports_children = true,
+        children = { child_block },
+      })
+      local para_after = create_typed_block('para1', 'paragraph', 'paragraph after toggle')
+
+      local blocks = { toggle_block, para_after }
+
+      -- Initial buffer content:
+      -- Line 1: ▶ toggle title
+      -- Line 2:   existing child content  (indented child)
+      -- Line 3: paragraph after toggle
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        '▶ toggle title',
+        '  existing child content',
+        'paragraph after toggle',
+      })
+
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- Verify initial state
+      local toggle_start, toggle_end = toggle_block:get_line_range()
+      assert.are.equal(1, toggle_start, 'Toggle should start at line 1')
+      assert.are.equal(1, toggle_end, 'Toggle should end at line 1')
+
+      local child_start, child_end = child_block:get_line_range()
+      assert.are.equal(2, child_start, 'Child should start at line 2')
+      assert.are.equal(2, child_end, 'Child should end at line 2')
+
+      local para_start, para_end = para_after:get_line_range()
+      assert.are.equal(3, para_start, 'Para should start at line 3')
+      assert.are.equal(3, para_end, 'Para should end at line 3')
+
+      -- Simulate user pressing Enter at end of child line (line 2)
+      -- This inserts a new line after child, pushing para_after down
+      vim.api.nvim_buf_set_lines(bufnr, 2, 2, false, { '  new line typed by user' })
+
+      -- Now buffer is:
+      -- Line 1: ▶ toggle title
+      -- Line 2:   existing child content
+      -- Line 3:   new line typed by user  (orphan - new child)
+      -- Line 4: paragraph after toggle
+
+      -- Refresh line ranges from extmarks
+      mapping.refresh_line_ranges(bufnr)
+
+      -- CRITICAL: Child's line range should still be valid (line 2)
+      -- This is the bug - currently refresh_line_ranges doesn't update children
+      child_start, child_end = child_block:get_line_range()
+      assert.are.equal(2, child_start, 'Child line_start should be 2 after refresh')
+      assert.are.equal(2, child_end, 'Child line_end should be 2 after refresh')
+
+      -- Para after should have moved to line 4
+      para_start, para_end = para_after:get_line_range()
+      assert.are.equal(4, para_start, 'Para should have moved to line 4')
+      assert.are.equal(4, para_end)
+    end)
+
+    it('should not detect existing child as orphan when line ranges are refreshed', function()
+      -- Create toggle with child paragraph
+      local child_block = create_typed_block('child1', 'paragraph', 'evet inner paragraph')
+      local toggle_block = create_typed_block('toggle1', 'toggle', 'test toggle', {
+        editable = false,
+        supports_children = true,
+        children = { child_block },
+      })
+      local para_after = create_typed_block('para1', 'paragraph', 'after toggle')
+
+      local blocks = { toggle_block, para_after }
+
+      -- Initial buffer:
+      -- Line 1: ▶ test toggle
+      -- Line 2:   evet inner paragraph
+      -- Line 3: after toggle
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        '▶ test toggle',
+        '  evet inner paragraph',
+        'after toggle',
+      })
+
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- User presses Enter at end of child line (line 2)
+      -- Insert new empty line after child
+      vim.api.nvim_buf_set_lines(bufnr, 2, 2, false, { '  ' })
+
+      -- Now buffer is:
+      -- Line 1: ▶ test toggle
+      -- Line 2:   evet inner paragraph
+      -- Line 3:   (new orphan line)
+      -- Line 4: after toggle
+
+      -- Refresh line ranges
+      mapping.refresh_line_ranges(bufnr)
+
+      -- Detect orphans - should only find line 3 (the new line)
+      local orphans = mapping.detect_orphan_lines(bufnr, 0)
+
+      -- Should detect exactly 1 orphan (the new line at line 3)
+      assert.are.equal(1, #orphans, 'Should detect exactly 1 orphan (the new line)')
+      assert.are.equal(3, orphans[1].start_line, 'Orphan should be at line 3')
+      assert.are.equal(3, orphans[1].end_line)
+
+      -- The existing child at line 2 should NOT be an orphan
+      -- (it should be owned by toggle_block's children)
+      local child_start, child_end = child_block:get_line_range()
+      assert.are.equal(2, child_start, 'Child should still own line 2')
+      assert.are.equal(2, child_end)
+    end)
+  end)
+
+  describe('add_block with parent_block_id', function()
+    -- Helper to create typed mock block with children support
+    local function create_typed_block(id, block_type, content, opts)
+      opts = opts or {}
+      local block = {
+        id = id,
+        type = block_type,
+        content = content or '',
+        editable = opts.editable ~= false,
+        dirty = false,
+        line_start = nil,
+        line_end = nil,
+        children = opts.children or {},
+        supports_children_flag = opts.supports_children or false,
+        parent = nil,
+        get_id = function(self)
+          return self.id
+        end,
+        get_type = function(self)
+          return self.type
+        end,
+        is_editable = function(self)
+          return self.editable
+        end,
+        is_dirty = function(self)
+          return self.dirty
+        end,
+        set_dirty = function(self, value)
+          self.dirty = value
+        end,
+        set_line_range = function(self, start_line, end_line)
+          self.line_start = start_line
+          self.line_end = end_line
+        end,
+        get_line_range = function(self)
+          return self.line_start, self.line_end
+        end,
+        contains_line = function(self, line)
+          if not self.line_start or not self.line_end then
+            return false
+          end
+          return line >= self.line_start and line <= self.line_end
+        end,
+        format = function(self, format_opts)
+          format_opts = format_opts or {}
+          local indent = format_opts.indent or 0
+          local prefix = string.rep('  ', indent)
+
+          if self.type == 'toggle' then
+            return { prefix .. '▶ ' .. (self.content or '') }
+          elseif self.type == 'paragraph' then
+            return { prefix .. (self.content or '') }
+          else
+            return { prefix .. (self.content or '') }
+          end
+        end,
+        get_children = function(self)
+          return self.children or {}
+        end,
+        get_text = function(self)
+          return self.content or ''
+        end,
+        supports_children = function(self)
+          return self.supports_children_flag
+        end,
+        add_child = function(self, child, index)
+          if index then
+            table.insert(self.children, index, child)
+          else
+            table.insert(self.children, child)
+          end
+          child.parent = self
+        end,
+        set_parent = function(self, parent)
+          self.parent = parent
+        end,
+        spacing_after = function()
+          return 0
+        end,
+        is_empty_paragraph = function()
+          return false
+        end,
+        get_gutter_icon = function()
+          return nil
+        end,
+        is_list_item = function()
+          return false
+        end,
+        is_quote = function()
+          return false
+        end,
+      }
+      return block
+    end
+
+    it('should add block as child when parent_block_id is provided', function()
+      -- Create toggle (parent)
+      local toggle_block = create_typed_block('toggle1', 'toggle', 'toggle title', {
+        editable = false,
+        supports_children = true,
+      })
+
+      local blocks = { toggle_block }
+
+      -- Buffer content:
+      -- Line 1: ▶ toggle title
+      -- Line 2:   new child content
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        '▶ toggle title',
+        '  new child content',
+      })
+
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- Create new child block
+      local child_block = create_typed_block('child1', 'paragraph', 'new child content')
+
+      -- Add block as child of toggle
+      mapping.add_block(bufnr, child_block, 2, 2, nil, 'toggle1')
+
+      -- Child should be in toggle's children array
+      local children = toggle_block:get_children()
+      assert.are.equal(1, #children, 'Toggle should have 1 child')
+      assert.are.equal('child1', children[1]:get_id(), 'Child should be the added block')
+
+      -- Child's parent should be set
+      assert.are.equal(toggle_block, child_block.parent, 'Child parent should be toggle')
+
+      -- Block should NOT be in top-level blocks array
+      local all_blocks = mapping.get_blocks(bufnr)
+      assert.are.equal(1, #all_blocks, 'Should still have only 1 top-level block')
+      assert.are.equal('toggle1', all_blocks[1]:get_id())
+    end)
+
+    it('should add block to top-level when parent_block_id is nil', function()
+      local toggle_block = create_typed_block('toggle1', 'toggle', 'toggle title', {
+        editable = false,
+        supports_children = true,
+      })
+
+      local blocks = { toggle_block }
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        '▶ toggle title',
+        'sibling paragraph',
+      })
+
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- Create new sibling block (no parent)
+      local sibling_block = create_typed_block('para1', 'paragraph', 'sibling paragraph')
+
+      -- Add block as sibling (no parent_block_id)
+      mapping.add_block(bufnr, sibling_block, 2, 2, 'toggle1', nil)
+
+      -- Block should be in top-level blocks array
+      local all_blocks = mapping.get_blocks(bufnr)
+      assert.are.equal(2, #all_blocks, 'Should have 2 top-level blocks')
+
+      -- Toggle should have no children
+      local children = toggle_block:get_children()
+      assert.are.equal(0, #children, 'Toggle should have no children')
+    end)
+
+    it('should find parent recursively in nested children', function()
+      -- Create nested structure: toggle -> child1 -> grandchild
+      local grandchild = create_typed_block('grandchild1', 'paragraph', 'grandchild')
+      local child1 = create_typed_block('child1', 'paragraph', 'child', {
+        supports_children = true,
+        children = { grandchild },
+      })
+      grandchild.parent = child1
+
+      local toggle_block = create_typed_block('toggle1', 'toggle', 'toggle', {
+        editable = false,
+        supports_children = true,
+        children = { child1 },
+      })
+      child1.parent = toggle_block
+
+      local blocks = { toggle_block }
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        '▶ toggle',
+        '  child',
+        '    grandchild',
+        '    new block',
+      })
+
+      mapping.setup(bufnr, blocks)
+      mapping.setup_extmarks(bufnr, 0)
+
+      -- Create new block to add as child of child1 (nested)
+      local new_block = create_typed_block('new1', 'paragraph', 'new block')
+
+      -- Add block as child of child1
+      mapping.add_block(bufnr, new_block, 4, 4, nil, 'child1')
+
+      -- New block should be in child1's children
+      local child1_children = child1:get_children()
+      assert.are.equal(2, #child1_children, 'child1 should have 2 children')
+      assert.are.equal('new1', child1_children[2]:get_id())
+
+      -- New block's parent should be child1
+      assert.are.equal(child1, new_block.parent)
+    end)
+  end)
+
+  describe('rebuild_extmarks', function()
+    it('should rebuild extmarks for children blocks', function()
+      -- Create parent with children
+      local child1 = create_mock_block('child1', 'paragraph', '  Child 1')
+      local child2 = create_mock_block('child2', 'paragraph', '  Child 2')
+      local parent = create_mock_block('parent', 'toggle', 'Toggle')
+      parent.children = { child1, child2 }
+
+      -- Set line ranges manually (simulating after sync)
+      parent:set_line_range(1, 1)
+      child1:set_line_range(2, 2)
+      child2:set_line_range(3, 3)
+
+      -- Set up buffer with content matching the blocks
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'Toggle',
+        '  Child 1',
+        '  Child 2',
+      })
+
+      local blocks = { parent }
+      mapping.setup(bufnr, blocks)
+
+      -- Initially no extmarks
+      local ns_id = mapping.get_namespace()
+      local initial_extmarks = vim.api.nvim_buf_get_extmarks(bufnr, ns_id, 0, -1, {})
+      assert.are.equal(0, #initial_extmarks, 'Should have no extmarks initially after setup without setup_extmarks')
+
+      -- Rebuild extmarks
+      mapping.rebuild_extmarks(bufnr)
+
+      -- Should have 3 extmarks: 1 for parent + 2 for children
+      local extmarks = vim.api.nvim_buf_get_extmarks(bufnr, ns_id, 0, -1, {})
+      assert.are.equal(3, #extmarks, 'Should have extmarks for parent and both children after rebuild')
     end)
   end)
 end)

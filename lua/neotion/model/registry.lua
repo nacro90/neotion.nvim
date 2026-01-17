@@ -69,15 +69,36 @@ end
 ---@param raw table Notion API block JSON
 ---@return neotion.Block
 function M.deserialize(raw)
+  local log = require('neotion.log').get_logger('registry')
   local handler = M.get_handler(raw.type)
+  local block
 
   if handler then
-    return handler.new(raw)
+    block = handler.new(raw)
+  else
+    -- Fallback: base Block (read-only)
+    local base = require('neotion.model.block')
+    block = base.Block.new(raw)
   end
 
-  -- Fallback: base Block (read-only)
-  local base = require('neotion.model.block')
-  return base.Block.new(raw)
+  -- If raw has _children (populated by get_all_children), deserialize and add them
+  if raw._children and #raw._children > 0 then
+    log.debug('deserialize: block has _children', {
+      block_id = raw.id,
+      block_type = raw.type,
+      children_count = #raw._children,
+    })
+    for _, child_raw in ipairs(raw._children) do
+      local child_block = M.deserialize(child_raw)
+      block:add_child(child_block)
+    end
+    log.debug('deserialize: children added', {
+      block_id = raw.id,
+      final_children_count = #block:get_children(),
+    })
+  end
+
+  return block
 end
 
 ---Deserialize array of blocks from Notion API JSON

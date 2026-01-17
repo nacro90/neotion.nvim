@@ -508,7 +508,10 @@ describe('neotion.input.editing with mock blocks', function()
 
       local cursor = vim.api.nvim_win_get_cursor(0)
       assert.are.equal(2, cursor[1], 'Cursor should be on line 2')
-      assert.are.equal(2, cursor[2], 'Cursor should be after indent')
+      -- In normal mode, cursor max is #line - 1, so for '  ' (2 chars), max col is 1
+      -- In real insert mode usage, cursor would be at col 2 (after indent)
+      -- Test runs in normal mode context, so expect col 1
+      assert.are.equal(1, cursor[2], 'Cursor should be at end of indent (normal mode: last char)')
     end)
 
     it('should handle empty toggle (just prefix)', function()
@@ -759,6 +762,336 @@ describe('neotion.input.editing with mock blocks', function()
         assert.are.equal('', lines[1])
         assert.are.equal('', lines[2])
       end)
+    end)
+  end)
+
+  -- Phase 6: Tab/Shift+Tab indent navigation
+  describe('Tab indent handling', function()
+    it('should indent line by 2 spaces with Tab', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'child content' })
+      vim.api.nvim_win_set_cursor(0, { 1, 5 })
+
+      mapping.get_block_at_line = function()
+        return nil -- orphan line
+      end
+
+      editing.handle_tab(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('  child content', lines[1], 'Line should be indented by 2 spaces')
+    end)
+
+    it('should preserve cursor column position after Tab indent', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'content' })
+      vim.api.nvim_win_set_cursor(0, { 1, 3 }) -- at 'c|ontent'
+
+      mapping.get_block_at_line = function()
+        return nil
+      end
+
+      editing.handle_tab(bufnr)
+
+      local cursor = vim.api.nvim_win_get_cursor(0)
+      assert.are.equal(1, cursor[1], 'Cursor should stay on same line')
+      assert.are.equal(5, cursor[2], 'Cursor should shift by indent size (3 + 2)')
+    end)
+
+    it('should indent already indented line (deeper nesting)', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '  already indented' })
+      vim.api.nvim_win_set_cursor(0, { 1, 5 })
+
+      mapping.get_block_at_line = function()
+        return nil
+      end
+
+      editing.handle_tab(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('    already indented', lines[1], 'Should have 4 spaces (2 levels)')
+    end)
+
+    it('should not indent beyond max depth (3 levels = 6 spaces)', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '      max depth' })
+      vim.api.nvim_win_set_cursor(0, { 1, 10 })
+
+      mapping.get_block_at_line = function()
+        return nil
+      end
+
+      editing.handle_tab(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('      max depth', lines[1], 'Should not indent beyond max depth')
+    end)
+
+    it('should indent empty line', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '' })
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+      mapping.get_block_at_line = function()
+        return nil
+      end
+
+      editing.handle_tab(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('  ', lines[1], 'Empty line should be indented')
+    end)
+
+    it('should indent bullet list item', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '- item' })
+      vim.api.nvim_win_set_cursor(0, { 1, 3 })
+
+      mapping.get_block_at_line = function()
+        return create_mock_block('bulleted_list_item', 'item')
+      end
+
+      editing.handle_tab(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('  - item', lines[1], 'Bullet list should be indented')
+    end)
+
+    it('should indent numbered list item', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '1. item' })
+      vim.api.nvim_win_set_cursor(0, { 1, 4 })
+
+      mapping.get_block_at_line = function()
+        return create_mock_block('numbered_list_item', 'item')
+      end
+
+      editing.handle_tab(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('  1. item', lines[1], 'Numbered list should be indented')
+    end)
+  end)
+
+  describe('Shift+Tab dedent handling', function()
+    it('should dedent line by 2 spaces with Shift+Tab', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '  indented content' })
+      vim.api.nvim_win_set_cursor(0, { 1, 5 })
+
+      mapping.get_block_at_line = function()
+        return nil
+      end
+
+      editing.handle_shift_tab(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('indented content', lines[1], 'Line should be dedented by 2 spaces')
+    end)
+
+    it('should preserve cursor column position after Shift+Tab dedent', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '  content' })
+      vim.api.nvim_win_set_cursor(0, { 1, 5 }) -- at '  co|ntent'
+
+      mapping.get_block_at_line = function()
+        return nil
+      end
+
+      editing.handle_shift_tab(bufnr)
+
+      local cursor = vim.api.nvim_win_get_cursor(0)
+      assert.are.equal(1, cursor[1], 'Cursor should stay on same line')
+      assert.are.equal(3, cursor[2], 'Cursor should shift back by indent size (5 - 2)')
+    end)
+
+    it('should not dedent non-indented line', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'no indent' })
+      vim.api.nvim_win_set_cursor(0, { 1, 3 })
+
+      mapping.get_block_at_line = function()
+        return nil
+      end
+
+      editing.handle_shift_tab(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('no indent', lines[1], 'Non-indented line should not change')
+    end)
+
+    it('should dedent from deeper nesting', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '    deeply indented' })
+      vim.api.nvim_win_set_cursor(0, { 1, 10 })
+
+      mapping.get_block_at_line = function()
+        return nil
+      end
+
+      editing.handle_shift_tab(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('  deeply indented', lines[1], 'Should have 2 spaces (1 level)')
+    end)
+
+    it('should dedent indented bullet list item', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '  - item' })
+      vim.api.nvim_win_set_cursor(0, { 1, 5 })
+
+      mapping.get_block_at_line = function()
+        return create_mock_block('bulleted_list_item', 'item')
+      end
+
+      editing.handle_shift_tab(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('- item', lines[1], 'Bullet list should be dedented')
+    end)
+
+    it('should dedent indented numbered list item', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '  1. item' })
+      vim.api.nvim_win_set_cursor(0, { 1, 6 })
+
+      mapping.get_block_at_line = function()
+        return create_mock_block('numbered_list_item', 'item')
+      end
+
+      editing.handle_shift_tab(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('1. item', lines[1], 'Numbered list should be dedented')
+    end)
+
+    it('should handle cursor at indent area after dedent', function()
+      -- Cursor is within the indent area that will be removed
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '  content' })
+      vim.api.nvim_win_set_cursor(0, { 1, 1 }) -- within indent
+
+      mapping.get_block_at_line = function()
+        return nil
+      end
+
+      editing.handle_shift_tab(bufnr)
+
+      local cursor = vim.api.nvim_win_get_cursor(0)
+      assert.are.equal(1, cursor[1])
+      assert.are.equal(0, cursor[2], 'Cursor should clamp to 0 when in removed indent area')
+    end)
+
+    it('should dedent line with only spaces', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '    ' })
+      vim.api.nvim_win_set_cursor(0, { 1, 3 })
+
+      mapping.get_block_at_line = function()
+        return nil
+      end
+
+      editing.handle_shift_tab(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('  ', lines[1], 'Should dedent to 2 spaces')
+    end)
+  end)
+
+  describe('Tab keymap setup', function()
+    it('should set Tab keymap in normal mode', function()
+      editing.setup(bufnr)
+
+      local maps = vim.api.nvim_buf_get_keymap(bufnr, 'n')
+      local found_tab = false
+      for _, map in ipairs(maps) do
+        if map.lhs == '<Tab>' then
+          found_tab = true
+          break
+        end
+      end
+      assert.is_true(found_tab, 'Tab keymap should be set in normal mode')
+    end)
+
+    it('should set Shift+Tab keymap in normal mode', function()
+      editing.setup(bufnr)
+
+      local maps = vim.api.nvim_buf_get_keymap(bufnr, 'n')
+      local found_shift_tab = false
+      for _, map in ipairs(maps) do
+        if map.lhs == '<S-Tab>' then
+          found_shift_tab = true
+          break
+        end
+      end
+      assert.is_true(found_shift_tab, 'Shift+Tab keymap should be set in normal mode')
+    end)
+  end)
+
+  -- Phase 7: Deep nesting limit tests
+  describe('deep nesting limits', function()
+    it('should respect max depth when creating child on deeply nested toggle', function()
+      -- Toggle at max depth (6 spaces = level 3)
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '      > Nested toggle' })
+      vim.api.nvim_win_set_cursor(0, { 1, 21 }) -- end of line
+
+      mapping.get_block_at_line = function()
+        local block = create_mock_block('toggle', 'Nested toggle')
+        block.depth = 3 -- Already at max depth
+        return block
+      end
+
+      editing.handle_enter(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      -- Should NOT create 8-space indented child (would exceed max)
+      -- Instead should create sibling or stay at same level
+      assert.are.equal(2, #lines)
+      -- New line should not exceed 6 spaces (max depth)
+      local new_line_indent = #(lines[2]:match('^(%s*)') or '')
+      assert.is_true(new_line_indent <= 6, 'Should not exceed max indent (6 spaces)')
+    end)
+
+    it('should respect max depth with o on deeply nested toggle', function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '      > Deep toggle' })
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+      mapping.get_block_at_line = function()
+        local block = create_mock_block('toggle', 'Deep toggle')
+        block.depth = 3
+        return block
+      end
+
+      editing.handle_o(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal(2, #lines)
+      local new_line_indent = #(lines[2]:match('^(%s*)') or '')
+      assert.is_true(new_line_indent <= 6, 'o should not exceed max indent')
+    end)
+
+    it('should allow child creation when parent is below max depth', function()
+      -- Toggle at depth 2 (4 spaces) - can still have children
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '    > Level 2 toggle' })
+      vim.api.nvim_win_set_cursor(0, { 1, 20 })
+
+      mapping.get_block_at_line = function()
+        local block = create_mock_block('toggle', 'Level 2 toggle')
+        block.depth = 2
+        return block
+      end
+
+      editing.handle_enter(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal(2, #lines)
+      -- Child should be at 6 spaces (depth 3 = max)
+      assert.are.equal('      ', lines[2], 'Should create child at depth 3')
+    end)
+
+    it('should detect current indent from line content for depth check', function()
+      -- Line with 6 spaces (max depth) but block.depth not set
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '      > Max depth toggle' })
+      vim.api.nvim_win_set_cursor(0, { 1, 24 })
+
+      mapping.get_block_at_line = function()
+        return create_mock_block('toggle', 'Max depth toggle')
+        -- Note: depth not set, should detect from line content
+      end
+
+      editing.handle_enter(bufnr)
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal(2, #lines)
+      local new_line_indent = #(lines[2]:match('^(%s*)') or '')
+      -- Should detect 6 spaces = level 3 = max, so child cannot be deeper
+      assert.is_true(new_line_indent <= 6, 'Should detect indent from line and respect max')
     end)
   end)
 end)

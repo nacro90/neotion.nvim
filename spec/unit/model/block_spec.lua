@@ -153,7 +153,7 @@ describe('neotion.model.block', function()
   end)
 
   describe('has_children', function()
-    it('should return true when has_children is true', function()
+    it('should return true when raw.has_children is true', function()
       local block = block_module.Block.new({
         id = 'test',
         type = 'toggle',
@@ -163,7 +163,7 @@ describe('neotion.model.block', function()
       assert.is_true(block:has_children())
     end)
 
-    it('should return false when has_children is false', function()
+    it('should return false when has_children is false and no children', function()
       local block = block_module.Block.new({
         id = 'test',
         type = 'paragraph',
@@ -173,13 +173,265 @@ describe('neotion.model.block', function()
       assert.is_false(block:has_children())
     end)
 
-    it('should return false when has_children is not set', function()
+    it('should return false when has_children is not set and no children', function()
       local block = block_module.Block.new({
         id = 'test',
         type = 'paragraph',
       })
 
       assert.is_false(block:has_children())
+    end)
+
+    it('should return true when children are added locally', function()
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      local child = block_module.Block.new({ id = 'child', type = 'paragraph' })
+
+      parent:add_child(child)
+
+      assert.is_true(parent:has_children())
+    end)
+  end)
+
+  describe('children management', function()
+    it('should initialize with empty children array', function()
+      local block = block_module.Block.new({ id = 'test', type = 'toggle' })
+
+      assert.are.same({}, block:get_children())
+    end)
+
+    it('should add child and set parent reference', function()
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      local child = block_module.Block.new({ id = 'child', type = 'paragraph' })
+
+      parent:add_child(child)
+
+      assert.are.equal(1, #parent:get_children())
+      assert.are.equal(child, parent:get_children()[1])
+      assert.are.equal(parent, child.parent)
+      assert.are.equal('parent', child.parent_id)
+    end)
+
+    it('should set child depth based on parent depth', function()
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      parent.depth = 1
+      local child = block_module.Block.new({ id = 'child', type = 'paragraph' })
+
+      parent:add_child(child)
+
+      assert.are.equal(2, child.depth)
+    end)
+
+    it('should add child at specific index', function()
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      local child1 = block_module.Block.new({ id = 'child1', type = 'paragraph' })
+      local child2 = block_module.Block.new({ id = 'child2', type = 'paragraph' })
+      local child3 = block_module.Block.new({ id = 'child3', type = 'paragraph' })
+
+      parent:add_child(child1)
+      parent:add_child(child3)
+      parent:add_child(child2, 2)
+
+      assert.are.equal(child1, parent:get_children()[1])
+      assert.are.equal(child2, parent:get_children()[2])
+      assert.are.equal(child3, parent:get_children()[3])
+    end)
+
+    it('should remove child and clear parent reference', function()
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      local child = block_module.Block.new({ id = 'child', type = 'paragraph' })
+      parent:add_child(child)
+
+      local result = parent:remove_child(child)
+
+      assert.is_true(result)
+      assert.are.equal(0, #parent:get_children())
+      assert.is_nil(child.parent)
+      assert.is_nil(child.parent_id)
+    end)
+
+    it('should return false when removing non-existent child', function()
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      local other = block_module.Block.new({ id = 'other', type = 'paragraph' })
+
+      local result = parent:remove_child(other)
+
+      assert.is_false(result)
+    end)
+  end)
+
+  describe('set_parent', function()
+    it('should set parent reference and update parent_id', function()
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      local child = block_module.Block.new({ id = 'child', type = 'paragraph' })
+
+      child:set_parent(parent)
+
+      assert.are.equal(parent, child.parent)
+      assert.are.equal('parent', child.parent_id)
+    end)
+
+    it('should update depth based on parent', function()
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      parent.depth = 2
+      local child = block_module.Block.new({ id = 'child', type = 'paragraph' })
+
+      child:set_parent(parent)
+
+      assert.are.equal(3, child.depth)
+    end)
+
+    it('should reset depth to 0 when parent is nil', function()
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      local child = block_module.Block.new({ id = 'child', type = 'paragraph' })
+      child:set_parent(parent)
+
+      child:set_parent(nil)
+
+      assert.are.equal(0, child.depth)
+    end)
+  end)
+
+  describe('supports_children', function()
+    it('should return false for base block', function()
+      local block = block_module.Block.new({ id = 'test', type = 'paragraph' })
+
+      assert.is_false(block:supports_children())
+    end)
+  end)
+
+  -- Phase 7: Block deletion with children tests
+  describe('block deletion with children', function()
+    it('should clear all children references when parent is conceptually deleted', function()
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      local child1 = block_module.Block.new({ id = 'child1', type = 'paragraph' })
+      local child2 = block_module.Block.new({ id = 'child2', type = 'paragraph' })
+      parent:add_child(child1)
+      parent:add_child(child2)
+
+      -- Simulate deletion by removing all children
+      while #parent:get_children() > 0 do
+        parent:remove_child(parent:get_children()[1])
+      end
+
+      assert.are.equal(0, #parent:get_children())
+      assert.is_nil(child1.parent)
+      assert.is_nil(child2.parent)
+    end)
+
+    it('should handle nested children deletion (grandchildren)', function()
+      local grandparent = block_module.Block.new({ id = 'grandparent', type = 'toggle' })
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      local child = block_module.Block.new({ id = 'child', type = 'paragraph' })
+
+      grandparent:add_child(parent)
+      parent:add_child(child)
+
+      -- Remove parent from grandparent
+      grandparent:remove_child(parent)
+
+      -- Parent's children should still be intact (Notion API handles recursive delete)
+      assert.are.equal(1, #parent:get_children())
+      assert.are.equal(child, parent:get_children()[1])
+      -- But parent reference to grandparent should be cleared
+      assert.is_nil(parent.parent)
+    end)
+
+    it('should preserve sibling children when one child is removed', function()
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      local child1 = block_module.Block.new({ id = 'child1', type = 'paragraph' })
+      local child2 = block_module.Block.new({ id = 'child2', type = 'paragraph' })
+      local child3 = block_module.Block.new({ id = 'child3', type = 'paragraph' })
+
+      parent:add_child(child1)
+      parent:add_child(child2)
+      parent:add_child(child3)
+
+      -- Remove middle child
+      parent:remove_child(child2)
+
+      assert.are.equal(2, #parent:get_children())
+      assert.are.equal(child1, parent:get_children()[1])
+      assert.are.equal(child3, parent:get_children()[2])
+      assert.is_nil(child2.parent)
+      -- Siblings should still have parent reference
+      assert.are.equal(parent, child1.parent)
+      assert.are.equal(parent, child3.parent)
+    end)
+  end)
+
+  -- Phase 7: Moving children between parents tests
+  describe('moving children between parents', function()
+    it('should move child from one parent to another', function()
+      local parent1 = block_module.Block.new({ id = 'parent1', type = 'toggle' })
+      local parent2 = block_module.Block.new({ id = 'parent2', type = 'toggle' })
+      local child = block_module.Block.new({ id = 'child', type = 'paragraph' })
+
+      parent1:add_child(child)
+      assert.are.equal(parent1, child.parent)
+      assert.are.equal(1, #parent1:get_children())
+
+      -- Move to new parent
+      parent1:remove_child(child)
+      parent2:add_child(child)
+
+      assert.are.equal(0, #parent1:get_children())
+      assert.are.equal(1, #parent2:get_children())
+      assert.are.equal(parent2, child.parent)
+      assert.are.equal('parent2', child.parent_id)
+    end)
+
+    it('should update depth when moving to different level parent', function()
+      local root = block_module.Block.new({ id = 'root', type = 'toggle' })
+      root.depth = 0
+      local level1 = block_module.Block.new({ id = 'level1', type = 'toggle' })
+      local level2 = block_module.Block.new({ id = 'level2', type = 'toggle' })
+      local child = block_module.Block.new({ id = 'child', type = 'paragraph' })
+
+      root:add_child(level1)
+      level1:add_child(level2)
+      level2:add_child(child)
+
+      assert.are.equal(3, child.depth) -- depth 3 (root=0, level1=1, level2=2, child=3)
+
+      -- Move child from level2 to level1 (shallower)
+      level2:remove_child(child)
+      level1:add_child(child)
+
+      assert.are.equal(2, child.depth) -- Now at depth 2
+    end)
+
+    it('should handle moving child to become top-level (no parent)', function()
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      parent.depth = 1
+      local child = block_module.Block.new({ id = 'child', type = 'paragraph' })
+
+      parent:add_child(child)
+      assert.are.equal(2, child.depth)
+
+      -- Remove from parent but don't add to new parent (becomes top-level)
+      parent:remove_child(child)
+      child:set_parent(nil)
+
+      assert.is_nil(child.parent)
+      assert.are.equal(0, child.depth)
+    end)
+
+    it('should correctly reorder children when inserting at specific index', function()
+      local parent = block_module.Block.new({ id = 'parent', type = 'toggle' })
+      local child1 = block_module.Block.new({ id = 'child1', type = 'paragraph' })
+      local child2 = block_module.Block.new({ id = 'child2', type = 'paragraph' })
+      local child3 = block_module.Block.new({ id = 'child3', type = 'paragraph' })
+
+      parent:add_child(child1)
+      parent:add_child(child3)
+      -- Insert child2 at index 2 (between child1 and child3)
+      parent:add_child(child2, 2)
+
+      local children = parent:get_children()
+      assert.are.equal(3, #children)
+      assert.are.equal(child1, children[1])
+      assert.are.equal(child2, children[2])
+      assert.are.equal(child3, children[3])
     end)
   end)
 end)

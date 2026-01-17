@@ -95,11 +95,15 @@ end
 ---@param opts? {indent?: integer, indent_size?: integer}
 ---@return string[]
 function BulletedListBlock:format(opts)
+  opts = opts or {}
+  local indent = opts.indent or 0
+  local indent_size = opts.indent_size or 2
+  local prefix = string.rep(' ', indent * indent_size)
   -- Continuation lines get 2-space indent to align with bullet content
-  local continuation_prefix = '  '
+  local continuation_prefix = prefix .. '  '
 
   if self.text == '' then
-    return { BULLET_PREFIX }
+    return { prefix .. BULLET_PREFIX }
   end
 
   -- Handle multi-line content (soft breaks from Notion)
@@ -107,7 +111,7 @@ function BulletedListBlock:format(opts)
   local is_first = true
   for line in (self.text .. '\n'):gmatch('([^\n]*)\n') do
     if is_first then
-      table.insert(lines, BULLET_PREFIX .. line)
+      table.insert(lines, prefix .. BULLET_PREFIX .. line)
       is_first = false
     else
       table.insert(lines, continuation_prefix .. line)
@@ -240,8 +244,14 @@ end
 ---Check if block has children (nesting not supported in Phase 5.7)
 ---@return boolean
 function BulletedListBlock:has_children()
-  -- Children/nesting support deferred to Phase 9
-  return false
+  -- Use base class implementation that checks both raw.has_children and #self.children
+  return self.raw.has_children or #self.children > 0
+end
+
+---Bulleted list blocks can contain nested child blocks
+---@return boolean
+function BulletedListBlock:supports_children()
+  return true
 end
 
 ---Get rich text segments from block's rich_text

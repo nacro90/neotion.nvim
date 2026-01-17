@@ -205,7 +205,14 @@ end
 ---Children rendering deferred to future phase
 ---@return boolean
 function ToggleBlock:has_children()
-  return false
+  -- Use base class implementation that checks both raw.has_children and #self.children
+  return self.raw.has_children or #self.children > 0
+end
+
+---Toggle blocks can contain child blocks
+---@return boolean
+function ToggleBlock:supports_children()
+  return true
 end
 
 -- Module interface for registry

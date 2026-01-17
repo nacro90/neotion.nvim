@@ -48,7 +48,7 @@ describe('neotion.ui.live_search', function()
 
       assert.equals('def456', item.id)
       assert.equals('Another Page', item.title)
-      assert.equals('🔗', item.icon) -- External icons shown as link emoji
+      assert.equals('\u{f03e}', item.icon) -- External icons shown as Nerd Font image icon
       assert.equals('page', item.parent_type) -- api/pages.lua returns 'page' not 'page_id'
     end)
 

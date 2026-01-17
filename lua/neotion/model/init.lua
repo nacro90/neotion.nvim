@@ -30,22 +30,44 @@ end
 function M.format_blocks(blocks, opts)
   opts = opts or {}
   local lines = {}
-  local numbered_list_counter = 0
 
-  for _, block in ipairs(blocks) do
-    -- Track numbered list sequence
+  local function format_block_recursive(block, depth, numbered_list_counter)
+    -- Track numbered list sequence at this depth level
     if block.type == 'numbered_list_item' then
       numbered_list_counter = numbered_list_counter + 1
       if block.set_number then
         block:set_number(numbered_list_counter)
       end
-    else
-      -- Reset counter when encountering non-numbered-list block
-      numbered_list_counter = 0
     end
 
-    local block_lines = block:format(opts)
+    -- Format this block with current depth
+    local format_opts = vim.tbl_extend('force', opts, { indent = depth })
+    local block_lines = block:format(format_opts)
     vim.list_extend(lines, block_lines)
+
+    -- Recursively format children with increased depth
+    local children = block:get_children()
+    if #children > 0 then
+      local child_numbered_counter = 0
+      for _, child in ipairs(children) do
+        -- Reset numbered counter for non-list items
+        if child.type ~= 'numbered_list_item' then
+          child_numbered_counter = 0
+        end
+        child_numbered_counter = format_block_recursive(child, depth + 1, child_numbered_counter)
+      end
+    end
+
+    return numbered_list_counter
+  end
+
+  local numbered_list_counter = 0
+  for _, block in ipairs(blocks) do
+    -- Reset counter when encountering non-numbered-list block at root level
+    if block.type ~= 'numbered_list_item' then
+      numbered_list_counter = 0
+    end
+    numbered_list_counter = format_block_recursive(block, 0, numbered_list_counter)
   end
 
   return lines
@@ -97,13 +119,16 @@ function M.sync_blocks_from_buffer(bufnr)
   local blocks = mapping.get_blocks(bufnr)
   log.debug('Total blocks in buffer', { count = #blocks })
 
-  for i, block in ipairs(blocks) do
+  ---Process a block and its children recursively
+  ---@param block neotion.Block
+  ---@param index integer Block index for logging
+  local function process_block(block, index)
     local start_line, end_line = block:get_line_range()
 
     -- Skip blocks with nil line range (deleted from buffer)
     if not start_line or not end_line then
       log.debug('Block skipped (deleted from buffer)', {
-        index = i,
+        index = index,
         block_id = block:get_id(),
         block_type = block:get_type(),
       })
@@ -120,7 +145,7 @@ function M.sync_blocks_from_buffer(bufnr)
 
       if is_dirty_now and not was_dirty then
         log.debug('Block became dirty', {
-          index = i,
+          index = index,
           block_id = block:get_id(),
           block_type = block:get_type(),
           old_text_preview = old_text:sub(1, 30),
@@ -129,12 +154,22 @@ function M.sync_blocks_from_buffer(bufnr)
         })
       elseif is_dirty_now then
         log.debug('Block is dirty', {
-          index = i,
+          index = index,
           block_id = block:get_id(),
           block_type = block:get_type(),
         })
       end
     end
+
+    -- Recursively process children
+    local children = block:get_children()
+    for child_index, child in ipairs(children) do
+      process_block(child, index .. '.' .. child_index)
+    end
+  end
+
+  for i, block in ipairs(blocks) do
+    process_block(block, i)
   end
 end
 

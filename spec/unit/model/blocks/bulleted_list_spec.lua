@@ -416,7 +416,7 @@ describe('neotion.model.blocks.bulleted_list', function()
   end)
 
   describe('BulletedListBlock:has_children', function()
-    it('should return false (nesting not supported in Phase 5.7)', function()
+    it('should return true when API says has_children', function()
       local raw = {
         id = 'test',
         type = 'bulleted_list_item',
@@ -426,7 +426,32 @@ describe('neotion.model.blocks.bulleted_list', function()
 
       local block = bulleted_list_module.new(raw)
 
+      assert.is_true(block:has_children())
+    end)
+
+    it('should return false when no children', function()
+      local raw = {
+        id = 'test',
+        type = 'bulleted_list_item',
+        bulleted_list_item = { rich_text = {} },
+        has_children = false,
+      }
+
+      local block = bulleted_list_module.new(raw)
+
       assert.is_false(block:has_children())
+    end)
+
+    it('should support children (nested lists)', function()
+      local raw = {
+        id = 'test',
+        type = 'bulleted_list_item',
+        bulleted_list_item = { rich_text = {} },
+      }
+
+      local block = bulleted_list_module.new(raw)
+
+      assert.is_true(block:supports_children())
     end)
   end)
 

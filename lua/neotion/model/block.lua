@@ -9,6 +9,8 @@ local M = {}
 ---@field type neotion.BlockType Block type (paragraph, heading_1, etc.)
 ---@field raw table Original Notion JSON (preserved for round-trip)
 ---@field parent_id string|nil Parent block ID
+---@field parent neotion.Block|nil Parent block reference (for bidirectional traversal)
+---@field children neotion.Block[] Child blocks (for nested content like toggle, quote)
 ---@field depth integer Nesting level (0 = top-level)
 ---@field editable boolean Whether this block can be edited
 ---@field dirty boolean Has unsaved changes
@@ -31,6 +33,8 @@ function Block.new(raw)
   self.type = raw.type or 'unsupported'
   self.raw = raw -- Preserve original JSON for round-trip
   self.parent_id = raw.parent and raw.parent.block_id or nil
+  self.parent = nil -- Bidirectional reference, set via set_parent()
+  self.children = {} -- Child blocks for nested content
   self.depth = 0
   self.editable = false -- Default: read-only (override in subclasses)
   self.dirty = false
@@ -134,10 +138,65 @@ function Block:matches_content(lines)
   return true
 end
 
----Check if block has children
+---Check if block has children (either from API or locally added)
 ---@return boolean
 function Block:has_children()
-  return self.raw.has_children or false
+  return self.raw.has_children or #self.children > 0
+end
+
+---Get child blocks
+---@return neotion.Block[]
+function Block:get_children()
+  return self.children
+end
+
+---Add a child block
+---@param child neotion.Block The child block to add
+---@param index? integer Optional position (1-indexed), appends to end if nil
+function Block:add_child(child, index)
+  vim.validate({
+    child = { child, 'table' },
+    index = { index, 'number', true },
+  })
+  if index then
+    table.insert(self.children, index, child)
+  else
+    table.insert(self.children, child)
+  end
+  child:set_parent(self)
+end
+
+---Remove a child block
+---@param child neotion.Block The child block to remove
+---@return boolean success True if child was found and removed
+function Block:remove_child(child)
+  for i, c in ipairs(self.children) do
+    if c == child then
+      table.remove(self.children, i)
+      child.parent = nil
+      child.parent_id = nil
+      return true
+    end
+  end
+  return false
+end
+
+---Set parent block reference (bidirectional link)
+---@param parent neotion.Block|nil The parent block
+function Block:set_parent(parent)
+  self.parent = parent
+  if parent then
+    self.parent_id = parent.id
+    self.depth = parent.depth + 1
+  else
+    self.depth = 0
+  end
+end
+
+---Check if this block can have children (override in subclasses)
+---@return boolean
+function Block:supports_children()
+  return false
 end
 
 ---Check if block type has changed (requires delete+create instead of update)

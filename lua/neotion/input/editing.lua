@@ -45,11 +45,42 @@
 
 local M = {}
 
+-- Constants for indent handling (used across multiple functions)
+local INDENT_SIZE = 2
+local MAX_INDENT_LEVEL = 3 -- Max 3 levels of nesting (6 spaces)
+
 ---@class neotion.EditingOpts
 ---@field enabled? boolean Enable editing keymaps (default: true)
 
 ---@type table<integer, boolean>
 local attached_buffers = {}
+
+---Detect indent level from line content
+---@param line string Line content
+---@return integer Indent level (0-based)
+local function detect_indent_level(line)
+  if not line or line == '' then
+    return 0
+  end
+  local leading_spaces = 0
+  for i = 1, #line do
+    if line:sub(i, i) == ' ' then
+      leading_spaces = leading_spaces + 1
+    else
+      break
+    end
+  end
+  return math.floor(leading_spaces / INDENT_SIZE)
+end
+
+---Calculate child indent string respecting max depth
+---@param parent_line string Parent line content
+---@return string Indent string for child
+local function get_child_indent(parent_line)
+  local parent_level = detect_indent_level(parent_line)
+  local child_level = math.min(parent_level + 1, MAX_INDENT_LEVEL)
+  return string.rep(' ', child_level * INDENT_SIZE)
+end
 
 ---Get the current block at cursor position
 ---@param bufnr integer
@@ -74,11 +105,18 @@ local function get_cursor_col()
 end
 
 ---Check if cursor is at line end
+---In insert mode (real usage), cursor can be at #line (after last char)
+---In normal mode (testing), cursor max is #line - 1 (on last char)
+---Both cases should be treated as "at line end" for Enter handling
 ---@return boolean
 local function is_at_line_end()
   local col = get_cursor_col()
   local line = get_current_line()
-  return col >= #line
+  -- Handle both insert mode (col == #line) and normal mode (col == #line - 1)
+  -- Empty line: #line == 0, col == 0 -> true
+  -- Normal mode on last char: col == #line - 1 -> true
+  -- Insert mode after last char: col == #line -> true
+  return #line == 0 or col >= #line - 1
 end
 
 ---Get the prefix for list continuation
@@ -274,11 +312,11 @@ function M.handle_enter(bufnr)
     return
   end
 
-  -- Toggle: create indented child block
+  -- Toggle: create indented child block (respecting max depth)
   if block_type == 'toggle' then
     local col = get_cursor_col()
     local row = vim.api.nvim_win_get_cursor(0)[1]
-    local indent = '  ' -- 2-space indent for child
+    local indent = get_child_indent(line_content)
 
     if is_at_line_end() then
       -- At end: insert indented empty line
@@ -342,10 +380,10 @@ function M.handle_o(bufnr)
     end
   end
 
-  -- Toggle: create indented child line below
+  -- Toggle: create indented child line below (respecting max depth)
   if block_type == 'toggle' then
     local row = vim.api.nvim_win_get_cursor(0)[1]
-    local indent = '  ' -- 2-space indent for child
+    local indent = get_child_indent(line_content)
     vim.api.nvim_buf_set_lines(bufnr, row, row, false, { indent })
     vim.api.nvim_win_set_cursor(0, { row + 1, #indent })
     vim.schedule(function()
@@ -394,6 +432,70 @@ function M.handle_O(bufnr)
 
   -- Default: standard 'O' behavior
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('O', true, false, true), 'n', false)
+end
+
+---Handle Tab key - indent current line (become child of previous sibling)
+---@param bufnr integer
+function M.handle_tab(bufnr)
+  local line_content = get_current_line()
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  local col = get_cursor_col()
+
+  -- Calculate current indent level
+  local leading_spaces = 0
+  for i = 1, #line_content do
+    if line_content:sub(i, i) == ' ' then
+      leading_spaces = leading_spaces + 1
+    else
+      break
+    end
+  end
+  local current_level = math.floor(leading_spaces / INDENT_SIZE)
+
+  -- Don't indent beyond max depth
+  if current_level >= MAX_INDENT_LEVEL then
+    return
+  end
+
+  -- Add indent
+  local indent = string.rep(' ', INDENT_SIZE)
+  local new_line = indent .. line_content
+  vim.api.nvim_buf_set_lines(bufnr, row - 1, row, false, { new_line })
+
+  -- Adjust cursor position
+  vim.api.nvim_win_set_cursor(0, { row, col + INDENT_SIZE })
+end
+
+---Handle Shift+Tab key - dedent current line (become sibling of parent)
+---@param bufnr integer
+function M.handle_shift_tab(bufnr)
+  local line_content = get_current_line()
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  local col = get_cursor_col()
+
+  -- Calculate current indent level
+  local leading_spaces = 0
+  for i = 1, #line_content do
+    if line_content:sub(i, i) == ' ' then
+      leading_spaces = leading_spaces + 1
+    else
+      break
+    end
+  end
+
+  -- Can't dedent if not indented
+  if leading_spaces == 0 then
+    return
+  end
+
+  -- Remove one level of indent (or remaining spaces if less than INDENT_SIZE)
+  local spaces_to_remove = math.min(INDENT_SIZE, leading_spaces)
+  local new_line = line_content:sub(spaces_to_remove + 1)
+  vim.api.nvim_buf_set_lines(bufnr, row - 1, row, false, { new_line })
+
+  -- Adjust cursor position (clamp to 0 if cursor was in removed indent area)
+  local new_col = math.max(0, col - spaces_to_remove)
+  vim.api.nvim_win_set_cursor(0, { row, new_col })
 end
 
 ---Check if buffer has editing attached
@@ -451,6 +553,22 @@ function M.setup(bufnr, opts)
     desc = 'Neotion: Open line above (list-aware)',
   })
 
+  -- Normal mode: Tab -> indent line (become child)
+  vim.keymap.set('n', '<Tab>', function()
+    M.handle_tab(bufnr)
+  end, {
+    buffer = bufnr,
+    desc = 'Neotion: Indent line (become child)',
+  })
+
+  -- Normal mode: Shift+Tab -> dedent line (become sibling)
+  vim.keymap.set('n', '<S-Tab>', function()
+    M.handle_shift_tab(bufnr)
+  end, {
+    buffer = bufnr,
+    desc = 'Neotion: Dedent line (become sibling)',
+  })
+
   attached_buffers[bufnr] = true
 
   -- Clean up on buffer delete
@@ -475,6 +593,8 @@ function M.detach(bufnr)
   pcall(vim.keymap.del, 'i', '<S-CR>', { buffer = bufnr })
   pcall(vim.keymap.del, 'n', 'o', { buffer = bufnr })
   pcall(vim.keymap.del, 'n', 'O', { buffer = bufnr })
+  pcall(vim.keymap.del, 'n', '<Tab>', { buffer = bufnr })
+  pcall(vim.keymap.del, 'n', '<S-Tab>', { buffer = bufnr })
 
   attached_buffers[bufnr] = nil
 end

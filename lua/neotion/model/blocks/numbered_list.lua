@@ -71,12 +71,16 @@ end
 ---@param opts? {indent?: integer, indent_size?: integer}
 ---@return string[]
 function NumberedListBlock:format(opts)
+  opts = opts or {}
+  local indent = opts.indent or 0
+  local indent_size = opts.indent_size or 2
+  local indent_prefix = string.rep(' ', indent * indent_size)
   local prefix = tostring(self.number) .. '. '
   -- Continuation lines get spaces matching prefix length
-  local continuation_prefix = string.rep(' ', #prefix)
+  local continuation_prefix = indent_prefix .. string.rep(' ', #prefix)
 
   if self.text == '' then
-    return { prefix }
+    return { indent_prefix .. prefix }
   end
 
   -- Handle multi-line content (soft breaks from Notion)
@@ -84,7 +88,7 @@ function NumberedListBlock:format(opts)
   local is_first = true
   for line in (self.text .. '\n'):gmatch('([^\n]*)\n') do
     if is_first then
-      table.insert(lines, prefix .. line)
+      table.insert(lines, indent_prefix .. prefix .. line)
       is_first = false
     else
       table.insert(lines, continuation_prefix .. line)
@@ -235,8 +239,14 @@ end
 ---Check if block has children (nesting not supported)
 ---@return boolean
 function NumberedListBlock:has_children()
-  -- Children/nesting support deferred
-  return false
+  -- Use base class implementation that checks both raw.has_children and #self.children
+  return self.raw.has_children or #self.children > 0
+end
+
+---Numbered list blocks can contain nested child blocks
+---@return boolean
+function NumberedListBlock:supports_children()
+  return true
 end
 
 ---Get rich text segments from block's rich_text

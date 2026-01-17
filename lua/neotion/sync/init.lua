@@ -233,35 +233,67 @@ function M.execute(bufnr, plan, callback)
 
   --- Group consecutive creates into batches
   --- A batch is a chain where each block's after_block_id points to the previous block's temp_id
-  ---@return {creates: neotion.SyncPlanCreate[], after_block_id: string|nil}[]
+  --- Children with parent_block_id are grouped separately by their parent
+  ---@return {creates: neotion.SyncPlanCreate[], after_block_id: string|nil, parent_block_id: string|nil}[]
   local function group_creates_into_batches()
     if #plan.creates == 0 then
       return {}
     end
 
     local batches = {}
-    local current_batch = { creates = { plan.creates[1] }, after_block_id = plan.creates[1].after_block_id }
+    ---@type table<string, neotion.SyncPlanCreate[]>
+    local children_by_parent = {} -- parent_block_id -> creates[]
 
-    for i = 2, #plan.creates do
-      local create = plan.creates[i]
-      local prev_create = plan.creates[i - 1]
-
-      -- Check if this create chains from the previous one
-      if create.after_block_id == prev_create.temp_id then
-        -- Add to current batch (it's part of the chain)
-        table.insert(current_batch.creates, create)
+    -- First pass: separate page-level creates from children
+    local page_creates = {}
+    for _, create in ipairs(plan.creates) do
+      if create.parent_block_id then
+        -- Group children by parent
+        if not children_by_parent[create.parent_block_id] then
+          children_by_parent[create.parent_block_id] = {}
+        end
+        table.insert(children_by_parent[create.parent_block_id], create)
       else
-        -- Start a new batch
-        table.insert(batches, current_batch)
-        current_batch = { creates = { create }, after_block_id = create.after_block_id }
+        table.insert(page_creates, create)
       end
     end
 
-    -- Don't forget the last batch
-    table.insert(batches, current_batch)
+    -- Second pass: batch page-level creates by chaining
+    if #page_creates > 0 then
+      local current_batch = { creates = { page_creates[1] }, after_block_id = page_creates[1].after_block_id }
+
+      for i = 2, #page_creates do
+        local create = page_creates[i]
+        local prev_create = page_creates[i - 1]
+
+        -- Check if this create chains from the previous one
+        if create.after_block_id == prev_create.temp_id then
+          -- Add to current batch (it's part of the chain)
+          table.insert(current_batch.creates, create)
+        else
+          -- Start a new batch
+          table.insert(batches, current_batch)
+          current_batch = { creates = { create }, after_block_id = create.after_block_id }
+        end
+      end
+
+      -- Don't forget the last batch
+      table.insert(batches, current_batch)
+    end
+
+    -- Third pass: create batches for children (one batch per parent)
+    for parent_id, children in pairs(children_by_parent) do
+      table.insert(batches, {
+        creates = children,
+        parent_block_id = parent_id,
+        after_block_id = nil, -- Children append to parent, not after a sibling
+      })
+    end
 
     log.debug('Grouped creates into batches', {
       total_creates = #plan.creates,
+      page_creates = #page_creates,
+      child_parent_count = vim.tbl_count(children_by_parent),
       batch_count = #batches,
       batch_sizes = vim.tbl_map(function(b)
         return #b.creates
@@ -304,29 +336,39 @@ function M.execute(bufnr, plan, callback)
     local batch = create_batches[batch_index]
     local creates = batch.creates
 
-    -- Validate page_id
-    if not page_id then
-      log.error('Cannot create blocks: page_id not found')
+    -- Determine target: parent block (for children) or page (for siblings)
+    -- If parent_block_id is a temp_id, resolve it to the real ID
+    local resolved_parent_id = batch.parent_block_id and resolve_after_id(batch.parent_block_id) or nil
+    local target_id = resolved_parent_id or page_id
+    local is_child_batch = batch.parent_block_id ~= nil
+
+    -- Validate target_id
+    if not target_id then
+      log.error('Cannot create blocks: target_id not found')
       for _ = 1, #creates do
-        table.insert(errors, 'Cannot create block: page_id not found')
+        table.insert(errors, 'Cannot create block: target_id not found')
         check_done()
       end
       execute_batch(batch_index + 1)
       return
     end
 
-    -- Resolve the batch's after_block_id
-    local resolved_after_id = resolve_after_id(batch.after_block_id)
+    -- Resolve the batch's after_block_id (only for page-level creates)
+    local resolved_after_id = not is_child_batch and resolve_after_id(batch.after_block_id) or nil
 
     -- Serialize all blocks in the batch
     local block_jsons = {}
     for _, create in ipairs(creates) do
-      table.insert(block_jsons, model.serialize_block(create.block))
+      local serialized = model.serialize_block(create.block)
+      table.insert(block_jsons, serialized)
     end
 
     log.info('Executing batch create', {
       batch_index = batch_index,
       block_count = #creates,
+      target_id = target_id,
+      is_child_batch = is_child_batch,
+      parent_block_id = batch.parent_block_id,
       after_block_id = batch.after_block_id,
       resolved_after_id = resolved_after_id,
       block_types = vim.tbl_map(function(c)
@@ -334,7 +376,7 @@ function M.execute(bufnr, plan, callback)
       end, creates),
     })
 
-    blocks_api.append(page_id, block_jsons, function(result)
+    blocks_api.append(target_id, block_jsons, function(result)
       if result.error then
         log.error('Batch create failed', {
           batch_index = batch_index,
@@ -383,8 +425,17 @@ function M.execute(bufnr, plan, callback)
             if start_line and end_line then
               -- For batch creates, use resolved_after_id for first block,
               -- then each subsequent block's after is the previous block's new ID
-              local block_after_id = i == 1 and resolved_after_id or returned_blocks[i - 1].id
-              mapping.add_block(bufnr, create.block, start_line, end_line, block_after_id)
+              -- Note: Can't use `i == 1 and resolved_after_id or ...` because
+              -- resolved_after_id can be nil for child batches, causing Lua to
+              -- evaluate the `or` branch even when i == 1
+              local block_after_id
+              if i == 1 then
+                block_after_id = resolved_after_id
+              else
+                block_after_id = returned_blocks[i - 1].id
+              end
+              -- Pass parent_block_id for child blocks so they're added to parent's children array
+              mapping.add_block(bufnr, create.block, start_line, end_line, block_after_id, resolved_parent_id)
             else
               log.warn('Block missing orphan line info', {
                 temp_id = create.temp_id,

@@ -412,7 +412,7 @@ describe('neotion.model.blocks.quote', function()
   end)
 
   describe('QuoteBlock:has_children', function()
-    it('should return false (children not supported in Phase 5.7)', function()
+    it('should return true when API says has_children', function()
       local raw = {
         id = 'test',
         type = 'quote',
@@ -422,8 +422,33 @@ describe('neotion.model.blocks.quote', function()
 
       local block = quote_module.new(raw)
 
-      -- We ignore children for now
+      -- Quote now supports children
+      assert.is_true(block:has_children())
+    end)
+
+    it('should return false when no children', function()
+      local raw = {
+        id = 'test',
+        type = 'quote',
+        quote = { rich_text = {} },
+        has_children = false,
+      }
+
+      local block = quote_module.new(raw)
+
       assert.is_false(block:has_children())
+    end)
+
+    it('should support children', function()
+      local raw = {
+        id = 'test',
+        type = 'quote',
+        quote = { rich_text = {} },
+      }
+
+      local block = quote_module.new(raw)
+
+      assert.is_true(block:supports_children())
     end)
   end)
 

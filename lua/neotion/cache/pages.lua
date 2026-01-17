@@ -105,6 +105,23 @@ function M.save_content(page_id, blocks)
     return false
   end
 
+  -- Debug: check for _children in blocks
+  local blocks_with_children = 0
+  for _, block in ipairs(blocks) do
+    if block._children and #block._children > 0 then
+      blocks_with_children = blocks_with_children + 1
+      log.debug('save_content: block has _children', {
+        block_id = block.id,
+        block_type = block.type,
+        children_count = #block._children,
+      })
+    end
+  end
+  log.debug('save_content: blocks analysis', {
+    total_blocks = #blocks,
+    blocks_with_children = blocks_with_children,
+  })
+
   local hash = require('neotion.cache.hash')
 
   -- Serialize blocks to JSON
@@ -197,6 +214,23 @@ function M.get_content(page_id)
     log.error('Failed to deserialize cached blocks', { page_id = page_id, error = blocks })
     return nil, nil
   end
+
+  -- Debug: check for _children in retrieved blocks
+  local blocks_with_children = 0
+  for _, block in ipairs(blocks) do
+    if block._children and #block._children > 0 then
+      blocks_with_children = blocks_with_children + 1
+      log.debug('get_content: block has _children', {
+        block_id = block.id,
+        block_type = block.type,
+        children_count = #block._children,
+      })
+    end
+  end
+  log.debug('get_content: blocks analysis', {
+    total_blocks = #blocks,
+    blocks_with_children = blocks_with_children,
+  })
 
   log.info('Page content cache hit', { page_id = page_id, block_count = #blocks })
   return blocks, row.content_hash

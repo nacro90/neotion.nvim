@@ -30,7 +30,7 @@ describe('neotion.model.registry', function()
 
     it('should return false for unsupported types', function()
       -- Phase 5.7: code, quote, bulleted_list_item, divider are now supported
-      assert.is_false(registry.is_supported('toggle'))
+      -- Toggle is now supported
       assert.is_false(registry.is_supported('callout'))
       assert.is_false(registry.is_supported('image'))
       assert.is_false(registry.is_supported('embed'))
@@ -68,7 +68,7 @@ describe('neotion.model.registry', function()
     end)
 
     it('should return nil for unsupported types', function()
-      local handler = registry.get_handler('toggle')
+      local handler = registry.get_handler('callout')
 
       assert.is_nil(handler)
     end)
@@ -112,15 +112,15 @@ describe('neotion.model.registry', function()
 
     it('should create read-only base Block for unsupported types', function()
       local raw = {
-        id = 'toggle1',
-        type = 'toggle',
-        toggle = { rich_text = { { plain_text = 'Toggle' } } },
+        id = 'callout1',
+        type = 'callout',
+        callout = { rich_text = { { plain_text = 'Callout' } } },
       }
 
       local block = registry.deserialize(raw)
 
-      assert.are.equal('toggle1', block:get_id())
-      assert.are.equal('toggle', block:get_type())
+      assert.are.equal('callout1', block:get_id())
+      assert.are.equal('callout', block:get_type())
       assert.is_false(block:is_editable())
     end)
 
@@ -186,6 +186,85 @@ describe('neotion.model.registry', function()
       assert.is_false(blocks[2]:is_editable()) -- divider is read-only
       assert.is_true(blocks[3]:is_editable())
     end)
+
+    it('should deserialize nested children from _children field', function()
+      local blocks_raw = {
+        {
+          id = 'toggle1',
+          type = 'toggle',
+          toggle = { rich_text = { { plain_text = 'Parent toggle' } } },
+          has_children = true,
+          _children = {
+            {
+              id = 'para1',
+              type = 'paragraph',
+              paragraph = { rich_text = { { plain_text = 'Child paragraph' } } },
+            },
+            {
+              id = 'para2',
+              type = 'paragraph',
+              paragraph = { rich_text = { { plain_text = 'Another child' } } },
+            },
+          },
+        },
+      }
+
+      local blocks = registry.deserialize_all(blocks_raw)
+
+      assert.are.equal(1, #blocks)
+      local toggle = blocks[1]
+      assert.are.equal('toggle1', toggle:get_id())
+      assert.is_true(toggle:has_children())
+
+      local children = toggle:get_children()
+      assert.are.equal(2, #children)
+      assert.are.equal('para1', children[1]:get_id())
+      assert.are.equal('para2', children[2]:get_id())
+
+      -- Children should have parent reference
+      assert.are.equal(toggle, children[1].parent)
+      assert.are.equal(toggle, children[2].parent)
+    end)
+
+    it('should handle deeply nested children', function()
+      local blocks_raw = {
+        {
+          id = 'toggle1',
+          type = 'toggle',
+          toggle = { rich_text = {} },
+          has_children = true,
+          _children = {
+            {
+              id = 'nested_toggle',
+              type = 'toggle',
+              toggle = { rich_text = {} },
+              has_children = true,
+              _children = {
+                {
+                  id = 'deep_para',
+                  type = 'paragraph',
+                  paragraph = { rich_text = {} },
+                },
+              },
+            },
+          },
+        },
+      }
+
+      local blocks = registry.deserialize_all(blocks_raw)
+
+      local toggle = blocks[1]
+      local nested = toggle:get_children()[1]
+      local deep = nested:get_children()[1]
+
+      assert.are.equal('toggle1', toggle:get_id())
+      assert.are.equal('nested_toggle', nested:get_id())
+      assert.are.equal('deep_para', deep:get_id())
+
+      -- Check parent chain
+      assert.are.equal(toggle, nested.parent)
+      assert.are.equal(nested, deep.parent)
+    end)
   end)
 
   describe('get_supported_types', function()
@@ -202,8 +281,9 @@ describe('neotion.model.registry', function()
     it('should not contain unsupported types', function()
       local types = registry.get_supported_types()
 
-      -- Phase 5.7: code is now supported, use toggle and image as unsupported examples
-      assert.is_false(vim.tbl_contains(types, 'toggle'))
+      -- Phase 5.7: code is now supported, toggle is now supported
+      -- Use callout and image as unsupported examples
+      assert.is_false(vim.tbl_contains(types, 'callout'))
       assert.is_false(vim.tbl_contains(types, 'image'))
     end)
 
@@ -235,7 +315,7 @@ describe('neotion.model.registry', function()
     it('should return false when unsupported blocks present', function()
       local blocks_raw = {
         { id = '1', type = 'paragraph', paragraph = { rich_text = {} } },
-        { id = '2', type = 'toggle', toggle = { rich_text = {} } },
+        { id = '2', type = 'callout', callout = { rich_text = {} } },
       }
       local blocks = registry.deserialize_all(blocks_raw)
 
@@ -243,14 +323,15 @@ describe('neotion.model.registry', function()
 
       assert.is_false(is_editable)
       assert.are.equal(1, #unsupported)
-      assert.are.equal('toggle', unsupported[1])
+      assert.are.equal('callout', unsupported[1])
     end)
 
     it('should list all unsupported types', function()
       -- Phase 5.7: code, quote, bulleted_list_item are now supported
-      -- Use toggle, image, embed as unsupported examples
+      -- Toggle is now supported
+      -- Use callout, image, embed as unsupported examples
       local blocks_raw = {
-        { id = '1', type = 'toggle', toggle = {} },
+        { id = '1', type = 'callout', callout = {} },
         { id = '2', type = 'image', image = {} },
         { id = '3', type = 'embed', embed = {} },
       }
@@ -263,9 +344,9 @@ describe('neotion.model.registry', function()
 
     it('should deduplicate unsupported types', function()
       local blocks_raw = {
-        { id = '1', type = 'toggle', toggle = {} },
-        { id = '2', type = 'toggle', toggle = {} },
-        { id = '3', type = 'toggle', toggle = {} },
+        { id = '1', type = 'callout', callout = {} },
+        { id = '2', type = 'callout', callout = {} },
+        { id = '3', type = 'callout', callout = {} },
       }
       local blocks = registry.deserialize_all(blocks_raw)
 

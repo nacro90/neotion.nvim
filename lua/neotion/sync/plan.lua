@@ -14,7 +14,8 @@ local log = require('neotion.log').get_logger('sync.plan')
 ---@field block neotion.Block Block instance
 ---@field content string Content for new block
 ---@field block_type string Type of block to create
----@field after_block_id string|nil Insert after this block (nil = start of page)
+---@field after_block_id string|nil Insert after this block (nil = start of page, nil if parent_block_id is set)
+---@field parent_block_id string|nil Parent block ID (for children - use append API)
 ---@field temp_id string Temporary local ID for tracking
 
 ---@class neotion.SyncPlanDelete
@@ -87,12 +88,14 @@ function M.create(bufnr)
         content = block:get_text(),
         block_type = block:get_type(),
         after_block_id = block.after_block_id,
+        parent_block_id = block.parent_block_id,
         temp_id = block.temp_id,
       })
       log.info('New block to create from orphan', {
         temp_id = block.temp_id,
         block_type = block:get_type(),
         after_block_id = block.after_block_id,
+        parent_block_id = block.parent_block_id,
         content_preview = block:get_text():sub(1, 30),
       })
     end

@@ -6,6 +6,52 @@ describe('neotion.api.blocks', function()
     blocks = require('neotion.api.blocks')
   end)
 
+  describe('_fetch_nested_children', function()
+    it('should skip fetching when at max_depth', function()
+      local test_blocks = {
+        { id = 'block1', has_children = true },
+      }
+      local called = false
+
+      -- At max depth, should not fetch children
+      blocks._fetch_nested_children(test_blocks, 3, 3, function(err)
+        called = true
+        assert.is_nil(err)
+      end)
+
+      -- Callback should be called immediately
+      assert.is_true(called)
+      -- _children should not be set (no fetch happened)
+      assert.is_nil(test_blocks[1]._children)
+    end)
+
+    it('should call callback immediately when no blocks have children', function()
+      local test_blocks = {
+        { id = 'block1', has_children = false },
+        { id = 'block2', has_children = false },
+      }
+      local called = false
+
+      blocks._fetch_nested_children(test_blocks, 3, 0, function(err)
+        called = true
+        assert.is_nil(err)
+      end)
+
+      assert.is_true(called)
+    end)
+
+    it('should call callback immediately for empty blocks array', function()
+      local called = false
+
+      blocks._fetch_nested_children({}, 3, 0, function(err)
+        called = true
+        assert.is_nil(err)
+      end)
+
+      assert.is_true(called)
+    end)
+  end)
+
   describe('rich_text_to_plain', function()
     it('should extract plain text from rich text array', function()
       local rich_text = {

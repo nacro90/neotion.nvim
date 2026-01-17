@@ -204,14 +204,15 @@ describe('neotion editing integration', function()
     it('should create blocks with correct editability', function()
       -- Setup mock page with mixed block types
       -- Phase 5.7: quote, bulleted_list_item, and code are now editable
-      -- Only toggle and divider are read-only
+      -- Toggle is now editable too
+      -- Only divider and callout are read-only
       mock_api.add_page({
         id = PAGE_ID_4,
         title = 'Mixed Blocks',
         blocks = {
           mock_api.paragraph('para1mixed0000000000000000000', 'Editable paragraph'),
           mock_api.heading('head1mixed0000000000000000000', 'Editable heading', 1),
-          mock_api.toggle('toggle1mixed000000000000000000', 'Read-only toggle'),
+          mock_api.toggle('toggle1mixed000000000000000000', 'Editable toggle'),
           mock_api.divider('divider1mixed00000000000000000'),
           mock_api.quote('quote1mixed0000000000000000000', 'Editable quote'),
           mock_api.code('code1mixed00000000000000000000', 'print("editable")', 'python'),
@@ -241,26 +242,25 @@ describe('neotion editing integration', function()
       for _, block in ipairs(blocks) do
         if block:is_editable() then
           editable_count = editable_count + 1
-          -- Phase 5.7: paragraph, heading, quote, and code are editable
+          -- Phase 5.7: paragraph, heading, quote, code are editable
+          -- Toggle is now editable too
           assert.is_truthy(
             block:get_type() == 'paragraph'
               or block:get_type():match('^heading_')
               or block:get_type() == 'quote'
-              or block:get_type() == 'code',
-            'Paragraph, heading, quote, and code should be editable'
+              or block:get_type() == 'code'
+              or block:get_type() == 'toggle',
+            'Paragraph, heading, quote, code, and toggle should be editable'
           )
         else
           readonly_count = readonly_count + 1
-          -- Only toggle and divider are read-only
-          assert.is_truthy(
-            block:get_type() == 'toggle' or block:get_type() == 'divider',
-            'Toggle and divider should be read-only'
-          )
+          -- Only divider is read-only now
+          assert.is_truthy(block:get_type() == 'divider', 'Only divider should be read-only')
         end
       end
 
-      assert.are.equal(4, editable_count, 'Should have 4 editable blocks')
-      assert.are.equal(2, readonly_count, 'Should have 2 read-only blocks (toggle, divider)')
+      assert.are.equal(5, editable_count, 'Should have 5 editable blocks')
+      assert.are.equal(1, readonly_count, 'Should have 1 read-only block (divider)')
     end)
 
     it('should protect header lines', function()
@@ -353,26 +353,29 @@ describe('neotion editing integration', function()
     end)
 
     it('should create empty plan when no changes', function()
-      -- Setup mock page
+      -- Setup mock page (valid 32-char hex ID)
       mock_api.add_page({
-        id = 'nochange1111111122222222333333aa',
+        id = 'a0c0a0ce1111111122222222333333aa',
         title = 'No Changes',
         blocks = {
-          mock_api.paragraph('para1nochange00000000000000000a', 'Unchanged text'),
+          mock_api.paragraph('b1a1a0c0a0ce0000000000000000000a', 'Unchanged text'),
         },
       })
 
       -- Open the page
-      neotion.open('nochange1111111122222222333333aa')
+      neotion.open('a0c0a0ce1111111122222222333333aa')
 
       -- Wait for page to load
-      vim.wait(1000, function()
+      local loaded = vim.wait(1000, function()
         local bufs = buffer.list()
         return #bufs > 0 and buffer.get_status(bufs[1]) == 'ready'
       end)
 
+      assert.is_true(loaded, 'Buffer should load within timeout')
+
       local bufs = buffer.list()
       local bufnr = bufs[1]
+      assert.is_number(bufnr, 'Buffer number should be a number')
 
       -- Create plan without any changes
       local plan = plan_module.create(bufnr)

@@ -50,6 +50,43 @@ describe('neotion.api.blocks', function()
 
       assert.is_true(called)
     end)
+
+    it('should skip child_page blocks even if has_children is true', function()
+      -- child_page blocks have has_children=true but their children are
+      -- the page content, which should only be fetched when that page is opened
+      local test_blocks = {
+        { id = 'page1', type = 'child_page', has_children = true, child_page = { title = 'Sub Page' } },
+      }
+      local called = false
+
+      blocks._fetch_nested_children(test_blocks, 3, 0, function(err)
+        called = true
+        assert.is_nil(err)
+      end)
+
+      -- Should complete immediately without fetching
+      assert.is_true(called)
+      -- _children should NOT be set for child_page
+      assert.is_nil(test_blocks[1]._children)
+    end)
+
+    it('should skip child_database blocks even if has_children is true', function()
+      -- child_database blocks are similar - their children are database rows
+      local test_blocks = {
+        { id = 'db1', type = 'child_database', has_children = true, child_database = { title = 'My DB' } },
+      }
+      local called = false
+
+      blocks._fetch_nested_children(test_blocks, 3, 0, function(err)
+        called = true
+        assert.is_nil(err)
+      end)
+
+      -- Should complete immediately without fetching
+      assert.is_true(called)
+      -- _children should NOT be set for child_database
+      assert.is_nil(test_blocks[1]._children)
+    end)
   end)
 
   describe('rich_text_to_plain', function()

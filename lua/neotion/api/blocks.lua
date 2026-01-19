@@ -135,10 +135,12 @@ function M._fetch_nested_children(blocks, max_depth, current_depth, callback)
     return
   end
 
-  -- Find blocks that have children
+  -- Find blocks that have children (excluding child_page and child_database)
+  -- child_page/child_database blocks have has_children=true but their children
+  -- are the page/database content which should only be fetched when opened separately
   local blocks_with_children = {}
   for _, block in ipairs(blocks) do
-    if block.has_children then
+    if block.has_children and block.type ~= 'child_page' and block.type ~= 'child_database' then
       table.insert(blocks_with_children, block)
     end
   end
@@ -149,27 +151,47 @@ function M._fetch_nested_children(blocks, max_depth, current_depth, callback)
     return
   end
 
-  -- Fetch children for each block sequentially to avoid rate limiting
-  local pending = #blocks_with_children
+  -- Bounded concurrency: fetch children with limited parallelism
+  local MAX_CONCURRENT = 5
+  local total = #blocks_with_children
+  local completed = 0
+  local next_index = 1
+  local in_flight = 0
   local first_error = nil
 
-  for _, block in ipairs(blocks_with_children) do
-    M.get_all_children(block.id, function(result)
-      if result.error and not first_error then
-        first_error = result.error
-      end
+  local function fetch_next()
+    -- Start as many fetches as allowed by concurrency limit
+    while in_flight < MAX_CONCURRENT and next_index <= total do
+      local block = blocks_with_children[next_index]
+      next_index = next_index + 1
+      in_flight = in_flight + 1
 
-      -- Store children in the block's _children field
-      if not result.error and #result.blocks > 0 then
-        block._children = result.blocks
-      end
+      M.get_all_children(block.id, function(result)
+        in_flight = in_flight - 1
+        completed = completed + 1
 
-      pending = pending - 1
-      if pending == 0 then
-        callback(first_error)
-      end
-    end, { max_depth = max_depth, _current_depth = current_depth + 1 })
+        if result.error and not first_error then
+          first_error = result.error
+        end
+
+        -- Store children in the block's _children field
+        if not result.error and #result.blocks > 0 then
+          block._children = result.blocks
+        end
+
+        -- Check if all done
+        if completed == total then
+          callback(first_error)
+        else
+          -- Schedule next fetch
+          vim.schedule(fetch_next)
+        end
+      end, { max_depth = max_depth, _current_depth = current_depth + 1 })
+    end
   end
+
+  -- Start initial batch
+  fetch_next()
 end
 
 ---Extract plain text from rich text array
